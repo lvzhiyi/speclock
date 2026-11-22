@@ -19,11 +19,14 @@ MAX_INPUT = 2 * 1024 * 1024
 
 def choose_root(payload):
     """不用插件 cwd 猜项目；多根必须由显式项目目录或 Shell 执行目录消歧。"""
-    roots = payload.get("workspace_roots", [])
+    raw_roots = payload.get("workspace_roots")
+    roots = [] if raw_roots is None else raw_roots
     if not isinstance(roots, list) or len(roots) > 64:
         raise ValueError("workspace_roots 无效")
     candidates = []
     for value in roots:
+        if value == "":
+            continue
         if not isinstance(value, str) or not Path(value).is_absolute():
             raise ValueError("工作区根必须是绝对路径")
         candidate = Path(value).resolve()
@@ -32,12 +35,19 @@ def choose_root(payload):
     explicit = os.environ.get("CURSOR_PROJECT_DIR")
     working = payload.get("tool_input", {}).get("working_directory") if payload.get("tool_name") == "Shell" else None
     directories = []
-    for value in (explicit, working):
-        if value is None:
+    for key, value in (("explicit", explicit), ("working", working)):
+        if value is None or value == "":
             continue
-        if not isinstance(value, str) or not Path(value).is_absolute():
+        if not isinstance(value, str):
             raise ValueError("执行目录必须是绝对路径")
-        directory = Path(value).resolve()
+        path = Path(value)
+        if not path.is_absolute():
+            # Shell 的相对 working_directory 仅在基准目录唯一时解析，禁止多根猜测或越出工作区。
+            base = directories[0] if directories else (candidates[0] if len(candidates) == 1 else None)
+            if key != "working" or base is None:
+                raise ValueError("执行目录必须是绝对路径")
+            path = base / path
+        directory = path.resolve()
         matches = [p for p in candidates if directory == p or p in directory.parents]
         if candidates and not matches:
             raise ValueError("执行目录不在工作区根内")
@@ -47,9 +57,9 @@ def choose_root(payload):
     # Shell 实际目录优先；不能折叠为工作区根而借用父项目授权。
     selected = directories[-1] if directories else None
     if selected is None:
-        if len(candidates) != 1:
-            raise ValueError("多根或缺少根目录，必须提供 CURSOR_PROJECT_DIR 或 Shell working_directory")
-        selected = candidates[0]
+        if len(candidates) > 1:
+            raise ValueError("多根目录必须提供 CURSOR_PROJECT_DIR 或 Shell working_directory")
+        selected = candidates[0] if candidates else None
     return selected
 
 
@@ -71,7 +81,7 @@ def normalize(payload):
     if name in {"preToolUse", "postToolUse"} and not isinstance(payload.get("tool_name"), str):
         raise ValueError("缺少 tool_name")
     root = choose_root(payload)
-    event = {"cwd": str(root), "session_id": session, "hook_event_name": EVENTS[name], "tool_name": payload.get("tool_name", ""), "tool_input": data}
+    event = {"cwd": str(root) if root is not None else "", "session_id": session, "hook_event_name": EVENTS[name], "tool_name": payload.get("tool_name", ""), "tool_input": data}
     if name == "beforeSubmitPrompt":
         event["prompt"] = payload.get("prompt")
     for key in ("tool_use_id", "generation_id"):
@@ -90,8 +100,8 @@ def handle(payload):
     os.environ["WORKFLOW_HOST"] = "cursor"
     event = normalize(payload)
     name, tool = event["hook_event_name"], event["tool_name"]
-    # 初始化前不拦工具；解析故障仍由入口拒绝，不能降级为旁路。
-    if host_gate.project_root(event["cwd"]) is None:
+    # 未绑定工作区或初始化前不拦工具；解析故障仍由入口拒绝，不能降级为旁路。
+    if not event["cwd"] or host_gate.project_root(event["cwd"], event["session_id"]) is None:
         return {"permission": "allow"} if name in {"PreToolUse", "SubagentStart"} else {}
     if name == "UserPromptSubmit":
         # 回复照常进入会话，由 Agent 读 status 并在版本失效时重新展示选项。

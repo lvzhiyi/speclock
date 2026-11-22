@@ -143,13 +143,58 @@ class CursorGateTests(unittest.TestCase):
         with patch.dict(os.environ, {"CURSOR_PROJECT_DIR": str(sibling)}):
             self.assertEqual(self.call(event)["permission"], "deny")
 
+    def test_unbound_session_and_empty_or_relative_directories(self):
+        # 无绑定目录且无显式目录时，即使 hook 进程 cwd 在受管项目内也不得误套门禁或报格式错。
+        for roots in ([], None, [""]):
+            for env_patch in ({}, {"CURSOR_PROJECT_DIR": ""}):
+                with patch.dict(os.environ, env_patch):
+                    for event in (
+                        dict(self.event("Shell", command="open -a Finder", working_directory=""), workspace_roots=roots),
+                        dict(self.event("MCP:iphone:connect"), workspace_roots=roots),
+                        dict(self.event(), hook_event_name="subagentStart", workspace_roots=roots),
+                    ):
+                        proc = subprocess.run([sys.executable, str(SCRIPTS / "cursor_gate.py")], input=json.dumps(event), text=True, capture_output=True, cwd=str(self.root))
+                        self.assertEqual(proc.returncode, 0, proc.stderr)
+                        self.assertEqual(json.loads(proc.stdout), {"permission": "allow"})
+                    for name in ("sessionStart", "postToolUse", "beforeSubmitPrompt"):
+                        event = dict(self.event(), hook_event_name=name, workspace_roots=roots, prompt="hi")
+                        proc = subprocess.run([sys.executable, str(SCRIPTS / "cursor_gate.py")], input=json.dumps(event), text=True, capture_output=True, cwd=str(self.root))
+                        self.assertEqual(proc.returncode, 0, proc.stderr)
+                        self.assertEqual(json.loads(proc.stdout), {})
+        # 无工作区根但显式给出受管项目的绝对 Shell 执行目录时，仍须执行门禁。
+        self.assertEqual(self.call(dict(self.event("Shell", command="touch x", working_directory=str(self.root)), workspace_roots=[]))["permission"], "deny")
+        # 单根下 Shell 相对 working_directory 基于唯一根解析，且不得越出工作区。
+        self.assertEqual(self.call(self.event("Shell", command="pwd", working_directory="."))["permission"], "allow")
+        self.assertEqual(self.call(self.event("Shell", command="pwd", working_directory=""))["permission"], "allow")
+        child = self.root / "child"
+        child.mkdir()
+        (child / "ai-workflow.yaml").write_text("version: 1\n", encoding="utf-8")
+        self.assertEqual(self.call(self.event("Shell", command="touch x", working_directory="child"))["permission"], "deny")
+        self.assertEqual(self.call(self.event("Shell", command="pwd", working_directory="../outside"))["permission"], "deny")
+        # 多根或非空相对 CURSOR_PROJECT_DIR 仍严格拒绝。
+        other = Path(self.tmp.name) / "other"
+        other.mkdir()
+        multi = self.event("Shell", command="pwd", working_directory="")
+        multi["workspace_roots"].append(str(other))
+        self.assertEqual(self.call(multi)["permission"], "deny")
+        multi["tool_input"]["working_directory"] = "."
+        self.assertEqual(self.call(multi)["permission"], "deny")
+        with patch.dict(os.environ, {"CURSOR_PROJECT_DIR": "relative/dir"}):
+            res = self.call(self.event("Read"))
+            self.assertEqual(res["permission"], "deny")
+            self.assertIn("ENGINE_CURSOR_FORMAT_ERROR", res["agent_message"])
+
     def test_unconfigured_workspace_bypasses_gate(self):
         (self.root / "ai-workflow.yaml").unlink()
-        for tool in ("Shell", "Write", "WebSearch", "Task"):
-            self.assertEqual(self.call(self.event(tool, command="python3 init.py")), {"permission": "allow"})
-        for name in ("sessionStart", "postToolUse"):
-            self.assertEqual(self.call(dict(self.event(), hook_event_name=name)), {})
-        self.assertEqual(self.call(dict(self.event(), hook_event_name="subagentStart")), {"permission": "allow"})
+        for setup in ("plain", "git"):
+            if setup == "git":
+                (self.root / ".git").mkdir()
+            for tool in ("Shell", "Write", "WebSearch", "Task"):
+                self.assertEqual(self.call(self.event(tool, command="python3 init.py")), {"permission": "allow"})
+            for name in ("sessionStart", "postToolUse"):
+                self.assertEqual(self.call(dict(self.event(), hook_event_name=name)), {})
+            self.assertEqual(self.call(dict(self.event(), hook_event_name="beforeSubmitPrompt", prompt="hi")), {})
+            self.assertEqual(self.call(dict(self.event(), hook_event_name="subagentStart")), {"permission": "allow"})
 
     def test_configured_errors_never_bypass(self):
         (self.root / "ai-workflow.yaml").write_text("version: 999\n")
