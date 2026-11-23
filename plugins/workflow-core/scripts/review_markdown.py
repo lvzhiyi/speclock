@@ -1,4 +1,4 @@
-"""将任务状态、提案与审批材料渲染为可读 Markdown，并安全写入项目外审阅目录。"""
+"""将任务状态、提案与审批材料渲染为可读 Markdown，并安全写入状态审阅目录。"""
 import hashlib
 import json
 import os
@@ -438,23 +438,40 @@ def _safe_task_stem(task_id):
 
 
 def write_review_markdown(state_dir, root, task, markdown, *, action=None):
-    """把审阅 Markdown 原子写入项目外状态目录的 reviews/ 下，禁止落入项目源码树或符号链接。"""
-    resolved_state = Path(state_dir).resolve()
-    resolved_root = Path(root).resolve()
-    reviews_dir = resolved_state / 'reviews'
+    """把审阅 Markdown 原子写入状态目录的 reviews/ 下，禁止落入受管源码或符号链接。"""
+    from workflow_engine.model import EngineError
+    from workflow_engine.state_dir import STATE_DIRNAME, ensure_internal_state_dir
 
-    if reviews_dir == resolved_root or resolved_root in reviews_dir.parents or reviews_dir in resolved_root.parents:
+    resolved_root = Path(root).resolve()
+    speclock_dir = resolved_root / STATE_DIRNAME
+    if speclock_dir.is_symlink():
+        raise ValueError('状态目录不可为符号链接')
+    raw_state = Path(state_dir)
+    if raw_state.is_symlink():
+        raise ValueError('状态目录不可为符号链接')
+    resolved_state = raw_state.resolve()
+    reviews_dir = resolved_state / 'reviews'
+    allowed_internal = (resolved_state == speclock_dir and reviews_dir == speclock_dir / 'reviews')
+
+    if not allowed_internal and (reviews_dir == resolved_root or resolved_root in reviews_dir.parents or reviews_dir in resolved_root.parents):
         raise ValueError('审阅目录不得位于项目根目录内或覆盖项目根目录')
     if reviews_dir.is_symlink():
         raise ValueError('审阅目录不可为符号链接')
     if reviews_dir.exists() and not reviews_dir.is_dir():
         raise ValueError('审阅目录路径已存在且不是目录')
 
+    if allowed_internal:
+        try:
+            ensure_internal_state_dir(resolved_root)
+        except EngineError as exc:
+            raise ValueError(str(exc)) from exc
+
     reviews_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
     os.chmod(str(reviews_dir), 0o700)
 
     resolved_reviews = reviews_dir.resolve()
-    if resolved_reviews == resolved_root or resolved_root in resolved_reviews.parents or resolved_reviews in resolved_root.parents:
+    allowed_internal_resolved = (resolved_reviews == speclock_dir / 'reviews')
+    if not allowed_internal_resolved and (resolved_reviews == resolved_root or resolved_root in resolved_reviews.parents or resolved_reviews in resolved_root.parents):
         raise ValueError('审阅目录解析后不得落入项目根目录')
 
     safe_id = _safe_task_stem(task.get('id', 'task'))

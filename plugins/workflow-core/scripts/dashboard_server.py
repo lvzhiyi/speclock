@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """单项目只读流程看板；服务状态写本机，不修改项目或引擎数据库。"""
 import argparse
-import hashlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
@@ -15,7 +14,8 @@ from urllib.request import urlopen
 
 from dashboard_data import build_dashboard, read_document
 from dashboard_page import page_html
-from workflow_host import workflow_home
+from workflow_engine.model import EngineError
+from workflow_engine.state_dir import STATE_DIRNAME, ensure_state_dir, is_internal_state, state_dir
 
 APP = "workflow-dashboard"
 
@@ -78,8 +78,7 @@ def bind_server(root, task=None, port=None):
 
 
 def state_path(root):
-    key = hashlib.sha256(str(root).encode()).hexdigest()
-    return workflow_home() / "workflow-dashboard" / (key + ".json")
+    return state_dir(root) / "dashboard.json"
 
 
 def ping(path):
@@ -107,7 +106,10 @@ def main(argv=None):
             raise OSError("项目根目录不存在")
         if args.action == "serve":
             server = bind_server(root, args.task)
-            path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+            if (root / STATE_DIRNAME).is_symlink() or is_internal_state(root, path):
+                ensure_state_dir(root)
+            else:
+                path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
             fd = os.open(str(path), os.O_CREAT | os.O_TRUNC | os.O_WRONLY, 0o600)
             with os.fdopen(fd, "w", encoding="utf-8") as handle:
                 json.dump({"pid": os.getpid(), "port": server.server_port, "root": str(root), "task": args.task}, handle)
@@ -138,7 +140,7 @@ def main(argv=None):
                 raise OSError("看板启动失败")
         print(f'status=ON url=http://127.0.0.1:{active["port"]}/' if active else "status=OFF")
         return 0
-    except OSError as error:
+    except (OSError, EngineError) as error:
         print(f"status=BLOCKED reason={error}")
         return 2
 

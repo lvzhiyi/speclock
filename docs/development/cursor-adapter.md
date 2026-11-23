@@ -24,7 +24,7 @@
 WORKFLOW_HOST=cursor python3 "/绝对路径/plugins/workflow-core/scripts/workflow_engine_cli.py" --root "/项目根" status --task "T1"
 ```
 
-共享门禁只为固定引擎脚本允许这个精确环境前缀，不允许任意环境包装或 shell 拼接。引擎默认数据库仍沿用共享 `$CODEX_HOME/workflow-engine`（默认 `~/.codex/workflow-engine`），并未实现宿主隔离；如用 `WORKFLOW_ENGINE_HOME` 或 `--db`，必须确保门禁、CLI 和看板读取同一库，不能只对某次 CLI 使用另一个库后期待自动关联。
+共享门禁只为固定引擎脚本允许这个精确环境前缀，不允许任意环境包装或 shell 拼接。引擎与看板状态默认保存在项目内 `.speclock/`（自动写 `.speclock/.gitignore`；首次无库时可自动从旧版 `$CODEX_HOME/workflow-engine` 只读备份迁移）；如用 `WORKFLOW_ENGINE_HOME` 或 `--db`，必须确保门禁、CLI 和看板读取同一库，不能只对某次 CLI 使用另一个库后期待自动关联。
 
 Agent 用 `request-confirmation` 登记当前任务版本和 `conversation_id`，随后展示档位。用户在聊天中单独回复 `选轻量档`、`选标准档` 或 `选完整档`，由 `beforeSubmitPrompt` 登记。完整档方案就绪后，另登记 `--kind approval`，让用户回复 `批准方案`。Agent 用 `status` 核实登记结果。`AskQuestion` 的普通工具结果继续只用于问答，因为 Cursor 尚未文档化可用于定档的选择回执。
 
@@ -34,7 +34,7 @@ Agent 用 `request-confirmation` 登记当前任务版本和 `conversation_id`�
 - Read/Glob/Grep/rg 与 AskQuestion 允许调查；未知 MCP、Shell 写命令、Task 仍须通过共享引擎就绪检查，explore 名称不构成只读证明。Write/Delete/Edit 只接受非空字符串目标 `file_path`、`path`、`target_file`，未知 schema 拒绝；目标范围、会话和基线由共享门禁验证。
 - Task 仅在父任务已绑定且当前轮次授权就绪时允许委派；子 Agent 不因此取得独立授权，必须使用其实际会话重新绑定、读取基线。subagentStart 仅返回合法的 permission/user_message，提醒不等于全部子工具路径已覆盖；Cursor 未回调的写入路径不在保证内。插件不是系统沙箱。
 - sessionStart 返回 env 与 additional_context；postToolUse 返回适用的 additional_context。
-- 看板 CLI 使用 `WORKFLOW_HOST=cursor` 将服务运行信息存放在 `~/.cursor/workflow-dashboard`，任务数据来自共享引擎数据库。
+- 看板 CLI 使用 `WORKFLOW_HOST=cursor` 将服务运行信息存放在状态目录（默认项目内 `.speclock/dashboard.json`），任务数据来自同一状态目录下的引擎数据库。
 
 ## 验证口径
 

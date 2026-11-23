@@ -63,10 +63,12 @@ def session_path(root, session):
 
 def legal_target(root, operation, value, config):
     """只认可配置中的具体文档角色、模块卡或有限自举骨架，不开放文档目录。"""
+    from workflow_engine.state_dir import is_state_relpath
     path = safe_path(root, value)
     # 插件实现和模板边界不能被项目配置或初始化草稿覆盖。
     parts = Path(path).parts
-    if (any(part in {"plugins", "skills", "scripts", "templates", ".cursor", ".claude", ".codex", ".git"} for part in parts[:-1]) or
+    if (is_state_relpath(path) or
+            any(part in {"plugins", "skills", "scripts", "templates", ".cursor", ".claude", ".codex", ".git", ".speclock"} for part in parts[:-1]) or
             (root / path).is_relative_to(Path(__file__).resolve().parent.parent)):
         raise ValueError("插件源码与模板不属于规划授权")
     if path == "README.md" or operation == "init" and path in ENTRIES:
@@ -114,8 +116,17 @@ def allows(root, session, paths):
         return False
 
 
-def write_record(path, record):
-    """原子替换避免回调读到半份登记；状态保存在项目源码树之外。"""
+def write_record(path, record, root=None):
+    """原子替换避免回调读到半份登记；状态保存在状态目录中。"""
+    if root is not None:
+        from workflow_engine.model import EngineError
+        from workflow_engine.state_dir import STATE_DIRNAME, ensure_internal_state_dir, is_internal_state
+        resolved_root = Path(root).resolve()
+        if (resolved_root / STATE_DIRNAME).is_symlink() or is_internal_state(resolved_root, path):
+            try:
+                ensure_internal_state_dir(resolved_root)
+            except EngineError as exc:
+                raise ValueError(str(exc)) from exc
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     temporary = path.with_name(path.name + "." + uuid.uuid4().hex)
     try:
@@ -166,10 +177,10 @@ def main(argv=None):
             record = {"root": str(root), "session": args.session, "operation": args.operation,
                       "paths": paths, "created_at": now, "expires_at": now + args.ttl,
                       "id": uuid.uuid4().hex, "previous_id": record.get("id") if record else None}
-            write_record(path, record)
+            write_record(path, record, root=root)
         elif args.action == "close" and record:
             record["closed_at"] = time.time()
-            write_record(path, record)
+            write_record(path, record, root=root)
         print(json.dumps({"planning": record, "active": bool(read_record(root, args.session))}, ensure_ascii=False))
         return 0
     except (OSError, ValueError, TypeError) as exc:

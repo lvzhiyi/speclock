@@ -257,7 +257,12 @@ def _engine(root, task_id, result, task_map, stage_map):
     mode.update(state="unavailable", binding="unbound")
     path = workflow_engine_cli.default_db(root)
     if not path.is_file():
-        mode["warning"] = "引擎数据库不存在；未创建数据库"
+        from workflow_engine.state_dir import external_home, legacy_db
+        old = legacy_db(root)
+        if external_home() is None and not old.is_symlink() and old.is_file():
+            mode["warning"] = "检测到旧版状态库，运行任意引擎 CLI 命令后自动迁移"
+        else:
+            mode["warning"] = "引擎数据库不存在；未创建数据库"
         return
     try:
         # 不能实例化 Store/Engine：它们会创建表，status 还会进行文件内容哈希。

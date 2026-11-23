@@ -12,7 +12,7 @@ CLI `create --details` 必填且必须为 JSON 对象（包括拒绝 null）；C
 
 `workflow_planning_cli.py open|status|close --root PROJECT --session SESSION` 是固定绝对脚本入口，不要求 `--task`。用户选择 init / prd-breakdown 后由技能显式 open：附 `--operation init|prd-breakdown`、重复 `--path` 精确目标及可选 `--ttl`（默认 1800 秒、最多 3600 秒）。配置文档角色来自 `docs.*`；模块卡只限 cards_dir 直接 Markdown 文件；README 只有明确登记才开放。init 可通过 `--config-json` 内联已确认的配置草稿自举有限配置与骨架目标，不因缺配置文件死锁。
 
-状态和开闭 JSONL 审计保存在项目外引擎目录，以项目、真实宿主 session、操作、精确路径及有效期约束。原生 Write / Edit / apply_patch 的全部目标命中才放行；路径穿越、符号链接、伪扩展、Shell 文件写入、MCP 混写及模板/产品代码不在例外内。结束、取消和交接前 close，过期或关闭后恢复原实施门槛。旧 WORKFLOW_PLAN_PATHS 环境例外不再生效。技能调用不是可靠身份认证，宿主也不能自动观察 Skill 后声称用户已批准实施。
+状态和开闭 JSONL 审计保存在状态目录（默认项目内 `.speclock/`），以项目、真实宿主 session、操作、精确路径及有效期约束。原生 Write / Edit / apply_patch 的全部目标命中才放行；路径穿越、符号链接、伪扩展、Shell 文件写入、MCP 混写及模板/产品代码不在例外内。结束、取消和交接前 close，过期或关闭后恢复原实施门槛。旧 WORKFLOW_PLAN_PATHS 环境例外不再生效。技能调用不是可靠身份认证，宿主也不能自动观察 Skill 后声称用户已批准实施。
 
 看板固定脚本只接受明确 on / off / status 与不重复的 --root / --task 键值，不需要实施任务；三宿主固定 WORKFLOW_HOST 前缀均支持。动作可放在白名单键值之前或之后，标量选项重复仍拒绝。无 action、serve、其他参数、任意脚本和 shell 拼接不属于免任务命令。init 的固定 detect.sh、git check-ignore -v 与固定 check_docs.py --root PROJECT --check-config 独立只读放行，不要求实施任务。macOS 只规范化 /var、/tmp、/etc 的已知 /private 系统祖先别名，项目内部符号链接仍逐级拒绝；配置与草稿均不可将插件 scripts/skills/templates 源码映射成规划文档。只读调查保持原有独立放行逻辑。
 
@@ -37,8 +37,8 @@ CLI `create --details` 必填且必须为 JSON 对象（包括拒绝 null）；C
 - `update_task(...,changes)`：只接受明确允许的任务字段。goal/scope/tier/acceptance/plan/source/dependencies/baseline/steps/proposal 改变控制摘要，撤销当前批准及相关证据、重置 todos，旧记录保留。选档后首次补齐当前缺失的步骤、方案或验证计划，可以沿用同一档位选择。纯展示措辞使用 note。方案批准绑定 proposal 的 JSON 语义内容。
 - `resume(...)`：同轮继续，只登记活动，不跳门禁、不推测阻塞。`return_task(...,reason,actor)`：人工退回新轮次，旧轮保留、新轮无证据。cancel 后只能人工退回，start/run/resume 均不能自动复活。
 - `cancel(...)`：取消并保持历史；running 期间拒绝取消，避免误报子进程已经停止。`recover(...)` 只恢复已死亡所有者的孤立 running，记 error attempt，不能把异常当成功。
-- `status(task_id)` / `snapshot(task_id)`：只读快照查询，核对当前文件和基线，返回 stale/invalidated 投影但不写任务、事件或版本。`history(task_id)`：只读历史事件。`render-md --task ID [--save] [--open] [--json]`：只读渲染任务方案与状态为 Markdown，`--save`/`--open` 写至项目外状态目录的 `reviews/` 子目录并尝试在默认应用或编辑器中打开（支持 `WORKFLOW_NO_OPEN=1`）。观察失效在下一次成功修改时落库，查询版本仍可用于 CAS。活动缺失不等于阻塞；activity 是明确事件，不根据静默时长造 blocked。
-- 交互确认（`confirm-tier`、`approve-proposal`、`confirm-plan`、`return-task`）：在交互终端输入 `confirm` 前，自动生成项目外 Markdown 审阅稿并尝试打开预览（打开失败或传 `--no-open` / `WORKFLOW_NO_OPEN=1` 时在终端展示完整 Markdown）；确认完成后，交互终端 `stdout` 输出简洁 Markdown 回执，传 `--json` 或管道输出时保留完整 JSON 契约。
+- `status(task_id)` / `snapshot(task_id)`：只读快照查询，核对当前文件和基线，返回 stale/invalidated 投影但不写任务、事件或版本。`history(task_id)`：只读历史事件。`render-md --task ID [--save] [--open] [--json]`：只读渲染任务方案与状态为 Markdown，`--save`/`--open` 写至状态目录的 `reviews/` 子目录并尝试在默认应用或编辑器中打开（支持 `WORKFLOW_NO_OPEN=1`）。观察失效在下一次成功修改时落库，查询版本仍可用于 CAS。活动缺失不等于阻塞；activity 是明确事件，不根据静默时长造 blocked。
+- 交互确认（`confirm-tier`、`approve-proposal`、`confirm-plan`、`return-task`）：在交互终端输入 `confirm` 前，自动生成状态目录下的 Markdown 审阅稿并尝试打开预览（打开失败或传 `--no-open` / `WORKFLOW_NO_OPEN=1` 时在终端展示完整 Markdown）；确认完成后，交互终端 `stdout` 输出简洁 Markdown 回执，传 `--json` 或管道输出时保留完整 JSON 契约。
 
 ## JSON 输出 schema
 
@@ -86,12 +86,12 @@ Task 的核心结构（新增字段应允许向前兼容）：
 
 ## CLI 示例
 
-以下 `we` 代表 `python3 plugins/workflow-core/scripts/workflow_engine_cli.py --root /project --db /outside/state.sqlite`；每次修改用上次输出 version，request 使用新唯一值。没有 mark-pass 命令。
+以下 `we` 代表 `python3 plugins/workflow-core/scripts/workflow_engine_cli.py --root /project`；每次修改用上次输出 version，request 使用新唯一值。没有 mark-pass 命令。
 
 ```sh
 we create --task T1 --tier 标准 --acceptance A1 --plan checks.json --details details.json --request create-T1
 we confirm-tier --task T1 --version 1 --actor 用户 --request tier-T1
-# 完整档才需要；摘要取当前 control_digest，命令会生成并弹出项目外 Markdown 审阅稿后要求人工终端确认（支持 --no-open / --json）。
+# 完整档才需要；摘要取当前 control_digest，命令会生成并弹出 Markdown 审阅稿后要求人工终端确认（支持 --no-open / --json）。
 we approve-proposal --task T1 --version 2 --actor 用户 --digest CONTROL_DIGEST --request approve-T1
 we render-md --task T1 --open
 we bind-executor --task T1 --version 3 --executor cli-reader --session session-1 --request bind-T1
@@ -126,11 +126,19 @@ we repair --task T1 --version VERSION --file repair-steps.json --reason 原范�
 
 上面的单文件形式使用一个 `--path`。用 `--all` 可读取任务声明的全部基线，用多个 `--path` 可读取其中一组。批量响应包含 `ok`、`version` 和 `documents`，每项与单文件的 `document` 结构相同。一批在一个事务内逐份登记，只推进一次任务版本。批量的 `--max-bytes` 限制序列化后整个 `documents` 数组的 UTF-8 字节数（含 JSON 转义），完整响应还包含外层字段。超过限额返回 `BASELINE_BATCH_LIMIT`，缺文件、无效编码或回执校验失败也不会写入半批回执。调用方按宿主输出预算分批，若收到的工具输出不完整，须重读相关正文。
 
+## 状态目录
+
+- **默认位置**：项目级状态（`state.sqlite`、`confirmation-*.json`、`planning-*.json`、`reviews/`、`dashboard.json`）默认保存在 `<项目根>/.speclock/`，同一项目下 CLI、Hooks 与看板共享同一真相源，适配 Codex `workspace-write` 等默认沙箱。
+- **自动忽略与防护**：首次写入时创建 `.speclock/`（`0700`）与 `.speclock/.gitignore`（内容为 `*\n`，`0600`），不改动项目根 `.gitignore`；源码快照硬编码跳过 `.speclock/`；门禁拦截原生编辑工具直接修改 `.speclock/`（返回 `ENGINE_STATE_PROTECTED`）。只读查询缺库时不创建目录，返回 `NOT_FOUND` 或空列表。
+- **外部模式**：显式设置 `WORKFLOW_ENGINE_HOME`（按项目根 SHA-256 分目录，不写 `.gitignore`）或传入 `--db` 时，仍按项目外目录处理；其他落入 `root` 内的路径或符号链接一律拒绝并返回 `DB_LOCATION`。权限不足或只读数据库返回 `STATE_NOT_WRITABLE` 并给出修复指引。
+- **旧库自动迁移**：未设置 `WORKFLOW_ENGINE_HOME` 且未传 `--db` 时，若新库不存在而旧库 `$CODEX_HOME/workflow-engine/<sha256>/state.sqlite`（默认 `~/.codex/workflow-engine/...`）存在且非符号链接，引擎 CLI 与门禁 `load_task` 会以只读 URI（`?mode=ro`）通过 `sqlite3.backup()` 原子复制到 `<项目根>/.speclock/state.sqlite`（`0600`），保留旧库不删除，并在 stderr 输出一行提示；看板只读查询仅展示迁移提示，不执行写入。
+- **清理与多 worktree**：执行 `git clean -fdx`（普通 `git clean -fd` 不会）会删除未跟踪的 `.speclock/` 本地状态；多个 Git worktree 拥有独立根路径，各自维护独立状态目录。跨项目的全局流程度量 `workflow-metrics/records.jsonl` 仍保留在 `$CODEX_HOME` / `~/.claude/`。
+
 ## 检查计划与资源边界
 
 检查计划保持 v1 严格 schema：顶层 version=1/checks；每项 id/argv/cwd/timeout/covers/acceptance。argv 数组、不执行 shell 字符串；covers 合计必须 format/analyze/test，acceptance 完整覆盖。项目需选择真正检查这些目标的命令，退出零不证明测试质量；包装器应拒绝空测试。每项结果保存 exit_code/reason/stdout/stderr/truncated；selectors 同时排空双管道，stdout/stderr 各保留最多 4096 字节，超限继续排空并标记 truncated，不使用无界 communicate。常见 token/password/secret/API key 与 Authorization 值尽力脱敏；脱敏不等于任意敏感数据检测，检查程序仍不得输出秘密。超时及父进程退出均清理进程组，避免遗留子进程持有管道造成死锁。
 
-数据库必须放在 root 外部，私有权限，拒绝符号链接。源码内容快照使用 Git 纳管文件与未忽略文件内容哈希，拒绝敏感文件、链接、子模块。基线另按声明文件完整核对；修改基线不能复用阅读证据。status 不改数据库，CLI 实例初始化已有数据库也不更新 schema 版本。旧协议 status 同样只读。
+数据库必须放在 root 外部或受控目录 `.speclock/state.sqlite`，私有权限，拒绝符号链接。源码内容快照使用 Git 纳管文件与未忽略文件内容哈希（自动跳过 `.speclock/`），拒绝敏感文件、链接、子模块。基线另按声明文件完整核对；修改基线不能复用阅读证据。status 不改数据库，CLI 实例初始化已有数据库也不更新 schema 版本。旧协议 status 同样只读。
 
 ## 最终集成接口补充
 

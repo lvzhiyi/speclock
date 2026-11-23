@@ -6,6 +6,7 @@ import stat
 import subprocess
 from .model import EngineError, digest
 from .policy import POLICY_VERSION
+from .state_dir import is_state_relpath
 
 CACHE_PARTS = {"__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache", "node_modules", ".dart_tool"}
 
@@ -31,6 +32,9 @@ def capture_files(root):
     paths = []
     for raw in sorted(names):
         rel = Path(os.fsdecode(raw))
+        # 引擎自身状态目录不属于纳管源码，在路径校验与追踪过滤前直接跳过。
+        if is_state_relpath(rel):
+            continue
         if rel.is_absolute() or ".." in rel.parts:
             raise EngineError("PATH_ESCAPE", "Git 路径越界")
         # 链接必须在缓存过滤前拒绝，避免通过缓存目录绕过边界。

@@ -31,7 +31,7 @@ python3 -m unittest discover -s plugins/workflow-core/scripts/tests_engine -p 't
 | **两步接入 & 轻骨架** | 装插件后运行 `init`，自动探测项目并生成配置和骨架；中小项目可选单文件核心基线 `docs/development/standards.md`（≤200 行），避免文档过载 | `/workflow-core:init` |
 | **中断可恢复** | 进度快照写进仓库，换会话、换人、换 Agent 都能按固定步骤接着做 | `handoff` |
 | **规则不打架** | 流程在插件、事实在项目，同一条规则只保留一处；任务卡只保留 7 个核心业务字段，执行轮次归引擎、历史变更归 Git | [规则优先级](#插件一览) |
-| **数据留在本机** | 度量记录写在本机，只存枚举、计数和规则名 | Codex 的 `$CODEX_HOME`（默认 `~/.codex/`）或 `~/.claude/` |
+| **状态留在本机** | 任务状态保存在项目内 `.speclock/`（自动忽略不入库）；流程度量写在本机，只存枚举、计数和规则名 | 状态：`<项目根>/.speclock/`；度量：`$CODEX_HOME`（默认 `~/.codex/`）或 `~/.claude/` |
 
 ### 任务执行与证据一目了然
 
@@ -218,7 +218,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/workflow_engine_cli.py" --root "项目根
 原有细粒度原子命令（`create` / `bind-executor` / `read-baseline` / `start` / `record-tdd` / `finish-implementation`）完整保留用于分批读取、显式幂等重试与异常恢复；旧任务仅经用户明确选择 `adopt-protocol`，保留旧历史但旧证据不继承。不要手写数据库或编造 mark-pass 命令。继续与总结前查询：
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/workflow_engine_cli.py" --root "项目根" --db "项目根外的状态库" status --task "任务ID"
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/workflow_engine_cli.py" --root "项目根" status --task "任务ID"
 ```
 
 `${CLAUDE_PLUGIN_ROOT}` 为安装插件根，未替换时按技能实际路径定位；其他命令先看实际 `--help`。协议见 [任务级引擎说明](docs/development/workflow-engine.md)，执行规则见 [workflow 技能](plugins/workflow-core/skills/workflow/SKILL.md)。
@@ -248,13 +248,13 @@ codex plugin add api-apifox@speclock
 
 Codex 共用此仓库的 marketplace，四个插件各自提供 `.codex-plugin/plugin.json`。按需单独配置 Context7、Superpowers 和官方 Dart and Flutter，Apifox CLI 也需单独安装登录。Pixso MCP 已随 `design-pixso` 声明，首次使用按提示授权。
 
-打开目标项目并新建 Codex 会话。在 CLI 的 `/hooks` 或桌面端的 **Settings → Hooks** 检查并信任要启用的钩子。首次接入时用 `$workflow-core:init` 生成 `ai-workflow.yaml` 和文档骨架，已有配置的项目直接用 `$workflow-core:workflow`。下文 Claude Code 的技能命令可在 Codex 中使用同名的 `$插件名:技能名`。
+打开目标项目并新建 Codex 会话。在 CLI 的 `/hooks` 或桌面端的 **Settings → Hooks** 检查并信任要启用的钩子。任务状态默认写入项目内 `.speclock/`（自动生成 `.speclock/.gitignore` 忽略），Codex 默认 `workspace-write` 沙箱下无需额外配置白名单即可开箱使用；已有旧版 `~/.codex/workflow-engine/` 状态库的项目会在首次运行 CLI 或门禁时自动只读迁移。首次接入时用 `$workflow-core:init` 生成 `ai-workflow.yaml` 和文档骨架，已有配置的项目直接用 `$workflow-core:workflow`。下文 Claude Code 的技能命令可在 Codex 中使用同名的 `$插件名:技能名`。
 
 - **宿主门禁**按实际支持的工具路径执行任务规则。Codex 会话提供原生选项时可以用它定档，回执未登记时按 Agent 提示在聊天中回复。Flutter Stop 静态分析是任务级验证与评审之外的附加检查。
 - **任务观测**使用 `$workflow-core:dashboard` 查看任务进度和验证记录。
 - **流程度量**使用 `$workflow-core:metrics` 汇总评审、交付和 Flutter 拦截记录。技能触发率及据此推导的规则删除候选目前仅由 Claude Code 会话数据提供。
 
-看板服务需要访问本机回环地址并写入本机运行目录；权限或沙盒限制按 [dashboard 技能](plugins/workflow-core/skills/dashboard/SKILL.md) 报告。流程度量是辅助统计，不替代任务证据。
+看板服务需要访问本机回环地址并将运行信息写入状态目录（默认项目内 `.speclock/`）；权限或沙盒限制按 [dashboard 技能](plugins/workflow-core/skills/dashboard/SKILL.md) 报告。流程度量是辅助统计（仍写在本机 `$CODEX_HOME` / `~/.claude/` 下），不替代任务证据。
 
 参见 [OpenAI 插件打包文档](https://developers.openai.com/plugins/build/plugins) 和 [Codex 钩子文档](https://learn.chatgpt.com/docs/hooks)。
 

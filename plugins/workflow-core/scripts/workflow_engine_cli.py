@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import sqlite3
 import sys
 import uuid
 
@@ -23,8 +24,8 @@ class Parser(argparse.ArgumentParser):
 
 def default_db(root):
     """状态不进入纳管源码指纹。"""
-    home = Path(os.environ.get('WORKFLOW_ENGINE_HOME') or Path(os.environ.get('CODEX_HOME', str(Path.home() / '.codex'))) / 'workflow-engine')
-    return home / hashlib.sha256(str(root.resolve()).encode()).hexdigest() / 'state.sqlite'
+    from workflow_engine.state_dir import state_dir
+    return state_dir(root) / 'state.sqlite'
 
 
 def parser():
@@ -98,7 +99,7 @@ def parser():
             command.add_argument('--json', action='store_true', help='以 JSON 格式输出确认结果')
             command.add_argument('--no-open', action='store_true', help='仅在终端展示审阅内容，不自动弹出外部窗口')
         if action == 'render-md':
-            command.add_argument('--save', action='store_true', help='将审阅 Markdown 保存到项目外审阅目录')
+            command.add_argument('--save', action='store_true', help='将审阅 Markdown 保存到状态目录下的 reviews/')
             command.add_argument('--open', action='store_true', help='保存并尝试在默认应用或编辑器中打开审阅 Markdown')
             command.add_argument('--json', action='store_true', help='以 JSON 格式输出结果')
     return result
@@ -298,6 +299,7 @@ def handle_begin(args, engine):
 
 def main(argv=None):
     args = None
+    state_target = None
     try:
         args = parser().parse_args(argv)
         if hasattr(args, 'request') and args.request is None:
@@ -307,8 +309,12 @@ def main(argv=None):
         confirmation = None
         review_path = None
         from workflow_engine.engine import Engine
+        from workflow_engine.state_dir import migrate_legacy
         root = Path(args.root).resolve()
         raw_database = Path(args.db) if args.db else default_db(root)
+        state_target = raw_database.parent
+        if not args.db:
+            migrate_legacy(root)
         if args.action == 'list':
             from session_binding import list_tasks
             from workflow_engine.model import EngineError
@@ -452,8 +458,20 @@ def main(argv=None):
             print(json.dumps(output, ensure_ascii=False))
         return 0 if passed else 1
     except Exception as error:
-        code = 'ARGUMENT' if isinstance(error, ArgumentError) else getattr(error, 'code', 'BLOCKED')
-        message = str(error) if isinstance(error, ArgumentError) or hasattr(error, 'code') else '引擎不可用或输入无效'
+        is_readonly_sqlite = isinstance(error, sqlite3.OperationalError) and any(
+            token in str(error).lower() for token in ('readonly', 'unable to open')
+        )
+        if isinstance(error, PermissionError) or is_readonly_sqlite:
+            code = 'STATE_NOT_WRITABLE'
+            target_text = str(state_target) if state_target is not None else '.speclock/'
+            message = (
+                f'状态目录不可写（{target_text}）。'
+                '默认状态目录位于项目内 .speclock/；若设置了 WORKFLOW_ENGINE_HOME 或 --db 指向项目外，'
+                '请取消该设置，或在宿主沙箱中放行该目录。不要用聊天记录代替引擎登记。'
+            )
+        else:
+            code = 'ARGUMENT' if isinstance(error, ArgumentError) else getattr(error, 'code', 'BLOCKED')
+            message = str(error) if isinstance(error, ArgumentError) or hasattr(error, 'code') else '引擎不可用或输入无效'
         action = getattr(args, 'action', None)
         interactive_confirm_error = action in CONFIRM_ACTIONS and sys.stdin.isatty() and sys.stdout.isatty()
         interactive_render_error = action == 'render-md' and sys.stdout.isatty()

@@ -11,6 +11,7 @@ from .snapshot import capture
 from .store import Store
 from .protocol import ProtocolMixin, current, readiness, require
 from .config_checks import enforce
+from .state_dir import STATE_DIRNAME, ensure_internal_state_dir
 
 _ACTIVE = set()
 _ACTIVE_LOCK = threading.Lock()
@@ -18,12 +19,20 @@ _ACTIVE_LOCK = threading.Lock()
 
 class LegacyEngine:
     def __init__(self, root: Path, db: Path):
+        raw_db = Path(db)
+        if raw_db.is_symlink():
+            raise EngineError("DB_LOCATION", "数据库不允许符号链接")
         self.root = Path(root).resolve()
-        self.db = Path(db).resolve()
-        if self.db == self.root or self.root in self.db.parents:
-            raise EngineError("DB_LOCATION", "数据库必须放在 root 外部")
         if not self.root.is_dir():
             raise EngineError("ROOT_INVALID", "root 必须是目录")
+        if (self.root / STATE_DIRNAME).is_symlink():
+            raise EngineError("DB_LOCATION", "状态目录不允许符号链接")
+        self.db = raw_db.resolve()
+        internal_db = self.root / STATE_DIRNAME / "state.sqlite"
+        if self.db == self.root or (self.root in self.db.parents and self.db != internal_db):
+            raise EngineError("DB_LOCATION", "数据库必须放在 root 外部或 .speclock/state.sqlite")
+        if self.db == internal_db:
+            ensure_internal_state_dir(self.root)
         self.store = Store(self.db)
 
     def _view(self, task):

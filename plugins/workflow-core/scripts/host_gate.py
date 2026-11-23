@@ -269,7 +269,12 @@ def pending_path(root, session, channel=""):
     return default_db(root).parent / ("confirmation-" + name + ".json")
 
 
-def save_pending(path, pending):
+def save_pending(path, pending, root=None):
+    if root is not None:
+        from workflow_engine.state_dir import STATE_DIRNAME, ensure_internal_state_dir, is_internal_state
+        resolved_root = Path(root).resolve()
+        if (resolved_root / STATE_DIRNAME).is_symlink() or is_internal_state(resolved_root, path):
+            ensure_internal_state_dir(resolved_root)
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     with tempfile.NamedTemporaryFile(dir=path.parent, mode="w", encoding="utf-8", delete=False) as handle:
         temporary = Path(handle.name)
@@ -302,7 +307,7 @@ def request_chat_confirmation(root, task, version, session, action, request):
             (action == "approval" and {"tier_confirmation", "proposal", "steps", "verify_config"} & missing)):
         raise EngineError("CONFIRMATION_INVALID", "当前任务未等待此确认，或方案尚未就绪")
     pending = dict(confirmation_target(task, action), request=request)
-    save_pending(pending_path(root, session, host + ":chat:"), pending)
+    save_pending(pending_path(root, session, host + ":chat:"), pending, root=root)
     replies = ["选" + label for label in TIER_LABELS] if action == "tier_confirmation" else ["批准方案"]
     return dict(pending, replies=replies)
 
@@ -405,7 +410,7 @@ def prepare_confirmation(event, root):
         path = pending_path(root, event.get("session_id"))
         pending = dict(confirmation_target(task, action), host=host, tool=event["tool_name"],
                        call=event["tool_use_id"], input=data, request=uuid.uuid4().hex)
-        save_pending(path, pending)
+        save_pending(path, pending, root=root)
         return None
     except Exception as exc:
         return "ENGINE_CONFIRMATION_REQUIRED：" + str(exc) + "；" + CONFIRM_HELP
@@ -505,7 +510,9 @@ def shell_tokens(command):
 def load_task(root):
     """写入前和阶段边界才核对全量内容哈希，不给每次只读工具增加快照成本。"""
     from workflow_engine.engine import Engine
+    from workflow_engine.state_dir import migrate_legacy
     from workflow_engine_cli import default_db
+    migrate_legacy(root)
     task_id = os.environ.get("WORKFLOW_TASK_ID")
     if not task_id:
         from session_binding import lookup
@@ -572,6 +579,9 @@ def pre_tool(event):
         return None
     try:
         paths = targets(event, root)
+        from workflow_engine.state_dir import is_state_relpath
+        if any(is_state_relpath(p) for p in paths):
+            return "ENGINE_STATE_PROTECTED：.speclock/ 是引擎状态目录，禁止直接编辑；请使用引擎 CLI。"
         # 规划例外只覆盖原生编辑；Shell 与 MCP 不能借用规划登记写文件。
         from workflow_planning_cli import allows, read_record
         session = event.get("session_id")

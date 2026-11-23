@@ -9,7 +9,7 @@ description: 任务级工作流总入口。开发、文档、Bug、重构或续�
 
 ## Cursor 宿主
 
-Cursor 使用 `${CURSOR_PLUGIN_ROOT}` 定位插件（仅在插件配置中展开；执行 Shell 命令时须使用 `SKILL.md` 定位或 `sessionStart` 给出的绝对路径，不得在命令中保留 `$` 变量）；执行本插件引擎 CLI 前每次显式添加 `WORKFLOW_HOST=cursor`，使用插件脚本绝对路径和项目 `--root`。不要依赖 hook 子进程为后续 Shell 设置环境。数据库沿用共享默认位置，不承诺宿主隔离。Cursor conversation_id 对应 bind-executor 的 session；多根由 CURSOR_PROJECT_DIR 或 Shell working_directory 明确选择。
+Cursor 使用 `${CURSOR_PLUGIN_ROOT}` 定位插件（仅在插件配置中展开；执行 Shell 命令时须使用 `SKILL.md` 定位或 `sessionStart` 给出的绝对路径，不得在命令中保留 `$` 变量）；执行本插件引擎 CLI 前每次显式添加 `WORKFLOW_HOST=cursor`，使用插件脚本绝对路径和项目 `--root`。不要依赖 hook 子进程为后续 Shell 设置环境。项目状态默认保存在项目内 `.speclock/`（支持通过 `WORKFLOW_ENGINE_HOME` 或 `--db` 指定外部库；如使用外部库须保证门禁、CLI 与看板一致）。Cursor conversation_id 对应 bind-executor 的 session；多根由 CURSOR_PROJECT_DIR 或 Shell working_directory 明确选择。
 
 Cursor 在 Agent 聊天里收集档位和方案批准，见下方「在 Agent 窗口定档」。Read 输出不能自动登记基线，必须 CLI read-baseline。Task 放行只验证父任务，子 Agent 的工具回调和会话绑定须独立核实，不承诺全写路径覆盖。看板 CLI 同样加 `WORKFLOW_HOST=cursor`。详情见仓库 `docs/development/cursor-adapter.md`。
 
@@ -43,8 +43,10 @@ Cursor 在 Agent 聊天里收集档位和方案批准，见下方「在 Agent �
 CLI 位于 `${CLAUDE_PLUGIN_ROOT}/scripts/workflow_engine_cli.py`，先查实际 `--help`；通用调用为：
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/workflow_engine_cli.py" --root "项目根" --db "项目根外的状态库" status --task "任务ID"
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/workflow_engine_cli.py" --root "项目根" status --task "任务ID"
 ```
+
+状态默认位于 `<项目根>/.speclock/`（首次写入自动生成 `.speclock/.gitignore` 忽略，禁止用文件编辑工具直接修改；如需外部库可显式设置 `WORKFLOW_ENGINE_HOME` 或 `--db`）。遇到 `STATE_NOT_WRITABLE` 或其他写入失败时，必须如实报告并给出 CLI 返回的修复指引，**禁止提议用聊天记录代替引擎登记**。
 
 继续与总结前读 `status`，必要时读 `snapshot` / `history`。日常新任务优先使用精简复合入口以减少 CLI 往返（底层门禁与原细粒度命令完全等价）：
 - `prepare`：一步创建 v2 任务（可省略 `--plan` 与 `details.baseline`，自动从 `ai-workflow.yaml` 派生）、绑定会话（`--executor` / `--session`）并可选 `--request-tier` 发起聊天定档；
@@ -68,7 +70,7 @@ WORKFLOW_HOST=codex python3 "${CLAUDE_PLUGIN_ROOT}/scripts/workflow_engine_cli.p
 
 示例使用 Codex。在 Cursor 或 Claude Code 中用 `WORKFLOW_HOST=cursor` 或 `WORKFLOW_HOST=claude`，脚本路径使用实际插件根。CLI 仅准备请求，确认由宿主收到用户消息后记录。回复后重新读 `status`。任务版本、轮次或绑定发生变化时，重新登记并展示确认选项。若选中的档位需要补齐步骤、方案或验证计划，先补齐缺项。
 
-完整档按 `tiering` 在会话中展示提案、技术设计和实施步骤，再单独批准。Claude Code 可用 `ExitPlanMode`，在计划包含同格式的 `:approval` 标记。任一宿主也可使用上面的命令，改为 `--kind approval` 并引导用户单独回复 `批准方案`。准备批准前使用最新版本，登记成功后以 `status` 为准。终端 `confirm-tier` 和 `approve-proposal` 保留给显式选择 CLI 的用户；终端交互确认会自动在项目外生成并弹出 Markdown 审阅稿（确认后输出简洁回执，支持 `--no-open`/`--json`），也可随时运行 `render-md --task <任务ID> [--open]` 导出只读审阅稿。
+完整档按 `tiering` 在会话中展示提案、技术设计和实施步骤，再单独批准。Claude Code 可用 `ExitPlanMode`，在计划包含同格式的 `:approval` 标记。任一宿主也可使用上面的命令，改为 `--kind approval` 并引导用户单独回复 `批准方案`。准备批准前使用最新版本，登记成功后以 `status` 为准。终端 `confirm-tier` 和 `approve-proposal` 保留给显式选择 CLI 的用户；终端交互确认会自动在状态目录 `reviews/` 下生成并弹出 Markdown 审阅稿（确认后输出简洁回执，支持 `--no-open`/`--json`），也可随时运行 `render-md --task <任务ID> [--open]` 导出只读审阅稿。
 
 人工确认仅为流程证据，不是可信签署；TTY、actor 或模型自报不提供抗程序代答、同账号防篡改或完整写入路径覆盖。插件不是安全沙箱。
 
