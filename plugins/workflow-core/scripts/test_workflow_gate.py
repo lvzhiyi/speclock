@@ -176,6 +176,42 @@ class GateTests(unittest.TestCase):
                 self.assertIn("REJECTED", self.hook("PostToolUse", host, **event, tool_response=accept_answer).stdout)
                 self.assertEqual(engine.status(task_id)["version"], approved["version"])
 
+    def test_codex_request_user_input_async_tier_and_approval(self):
+        from workflow_engine.engine import Engine
+        from workflow_engine_cli import default_db
+        from unittest.mock import patch
+
+        subprocess.run(["git", "init", "-q", str(self.project)], check=True)
+        with patch.dict(os.environ, {"WORKFLOW_ENGINE_HOME": self.tmp.name}):
+            engine = Engine(self.project, default_db(self.project))
+        plan = {"version": 1, "checks": [{"id": "check", "argv": ["true"], "cwd": ".", "timeout": 2, "covers": ["format", "analyze", "test"], "acceptance": ["A"]}]}
+        proposal = {"goal": "目标", "scope": "仅改 src", "impact": "无", "risk": "低", "rollback": "回退提交", "acceptance": ["A"]}
+        details = {"goal": "目标", "scope": ["src"], "source": "用户", "dependencies": [], "baseline": [], "steps": [{"id": "s1", "title": "步骤一"}, {"id": "s2", "title": "步骤二"}, {"id": "s3", "title": "步骤三"}], "proposal": proposal}
+        task = engine.create("T-ASYNC", "light", ["A"], plan, "async-create", details=details)
+        session = "session-async-codex"
+        task = engine.bind_executor("T-ASYNC", task["version"], "async-bind", "agent", session)
+
+        # 1. 定档：Codex request_user_input_async 使用 title + 字符串 options，PostToolUse 返回异步确认，UserPromptSubmit 收到点选结果。
+        tier_marker = f"workflow-confirm:T-ASYNC:{task['current_round']}:{task['control_digest']}:tier_confirmation"
+        tier_input = {"questions": [{"title": f"请选择档位。 {tier_marker} ", "options": ["选完整档", "选标准档", "选轻量档"]}]}
+        tier_event = dict(session_id=session, tool_name="request_user_input_async", tool_input=tier_input, tool_use_id="call-async-tier")
+        self.assertEqual(self.hook("PreToolUse", "codex", **tier_event).stdout, "")
+        self.assertIn("ENGINE_CONFIRMATION_PENDING", self.hook("PostToolUse", "codex", **tier_event, tool_response={"status": "pending"}).stdout)
+        self.assertIn("ENGINE_CONFIRMATION_RECORDED", self.hook("UserPromptSubmit", "codex", session_id=session, prompt="选完整档").stdout)
+        selected = engine.status("T-ASYNC")
+        self.assertEqual(selected["tier"], "full")
+        self.assertNotIn("tier_confirmation", selected["missing"])
+        self.assertIn("approval", selected["missing"])
+
+        # 2. 方案批准：同时验证 PostToolUse 直接返回字符串数组答案的同步路径。
+        app_marker = f"workflow-confirm:T-ASYNC:{selected['current_round']}:{selected['control_digest']}:approval"
+        app_input = {"questions": [{"title": f"请审批方案 {app_marker}", "options": ["批准方案", "需要修改"]}]}
+        app_event = dict(session_id=session, tool_name="request_user_input_async", tool_input=app_input, tool_use_id="call-async-app")
+        self.assertEqual(self.hook("PreToolUse", "codex", **app_event).stdout, "")
+        self.assertIn("ENGINE_CONFIRMATION_RECORDED", self.hook("PostToolUse", "codex", **app_event, tool_response=json.dumps({"answers": ["批准方案"]}, ensure_ascii=False)).stdout)
+        approved = engine.status("T-ASYNC")
+        self.assertNotIn("approval", approved["missing"])
+
     def test_manifests_install_synchronous_wildcard_gate(self):
         for filename in ("hooks.json", "codex.json"):
             manifest = json.loads((HERE.parent / "hooks" / filename).read_text(encoding="utf-8"))

@@ -59,7 +59,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/workflow_engine_cli.py" --root "项目根
 
 先绑定会话并读取 `status`。只有当前轮次缺少 `tier_confirmation` 才邀请用户定档。向用户展示当前任务、实施范围、推荐档位及三个档位的影响。选项标签固定为 `轻量档`、`标准档`、`完整档`，在问题正文或选项说明里标出推荐，保留标签原文。用户选中一项即完成定档。
 
-- **优先使用宿主原生单选卡片**（不要在具备原生单选工具时直接走 `prepare --request-tier` 让用户手打口令）：Claude Code 使用 `AskUserQuestion` 的单个 `multiSelect: false` 问题；Codex 在当前会话实际提供 `request_user_input` 时，使用其单个带非空 `id` 的问题。两端的问题正文均包含当前 `workflow-confirm:<任务ID>:<轮次ID>:<control_digest>:tier_confirmation`，标记前后用空白隔开，选项标签固定为 `轻量档`、`标准档`、`完整档`。使用真实工具 schema，并从 `status` 核实回执已入账。
+- **优先使用宿主原生单选卡片**（不要在具备原生单选工具时直接走 `prepare --request-tier` 让用户手打口令）：Claude Code 使用 `AskUserQuestion` 的单个 `multiSelect: false` 问题；Codex 在当前会话实际提供 `request_user_input`（单个带非空 `id` 的问题）或 `request_user_input_async`（单个含 `title` 与字符串 `options` 的问题）时优先调用。两端的问题正文（`question` 或 `title`）均包含当前 `workflow-confirm:<任务ID>:<轮次ID>:<control_digest>:tier_confirmation`，标记前后用空白隔开，选项标签为 `轻量档`、`标准档`、`完整档`（`request_user_input_async` 亦兼容 `选轻量档`/`选标准档`/`选完整档`）。使用真实工具 schema，收到用户选择后从 `status` 核实回执已入账。
 - **仅在无法使用原生单选时降级为聊天回复**：Cursor，或 Claude Code / Codex 当前会话缺少原生单选工具、钩子未收到匹配回执时，再使用聊天回复。Agent 先运行下面的命令登记当前版本（聊天确认已使用宿主无关通道，漏传 `WORKFLOW_HOST` 不会写错通道；显式传入仍受支持），并检查返回中的 `confirmation.hook_active`。若 `hook_active` 为 `false`（返回含 `hook_warning`），**不要让用户反复发送聊天口令**，应直接按 `hook_warning` 引导用户在宿主启用并信任插件钩子（如 Codex 的 Settings → Hooks 或 `/hooks` 信任 `workflow-core@speclock` 后新开会话），或提供交互终端 `confirm-tier` 命令。当 `hook_active` 为 `true` 时，在同一会话展示三个选项，直接以纯文本呈现 `选轻量档`、`选标准档` 或 `选完整档` 引导用户单独回复（避免外加 `**` 与反引号组合包裹造成复制困惑；钩子本身也已兼容常见成对 Markdown/引号包裹）。用户直接发消息即可，命令由 Agent 执行。
 
 ```bash
@@ -72,8 +72,8 @@ WORKFLOW_HOST=codex python3 "${CLAUDE_PLUGIN_ROOT}/scripts/workflow_engine_cli.p
 
 完整档按 `tiering` 在会话中展示提案、技术设计和实施步骤，再单独批准，**同样优先使用宿主原生点选**：
 - Claude Code 可用 `ExitPlanMode`（在计划中包含 `workflow-confirm:<任务ID>:<轮次ID>:<control_digest>:approval`），或用 `AskUserQuestion` 的单个 `multiSelect: false` 问题。
-- Codex 在当前会话实际提供 `request_user_input` 时，优先用其单个带非空 `id` 的问题。
-- 使用 `AskUserQuestion` 或 `request_user_input` 发起方案批准时，问题正文须包含 `workflow-confirm:<任务ID>:<轮次ID>:<control_digest>:approval`（前后用空白隔开），并提供至少两个不重复选项：标签 `批准方案` 及至少一个不批准选项（如 `需要修改`）。仅当用户选中 `批准方案` 时才会落库批准。
+- Codex 在当前会话实际提供 `request_user_input`（带非空 `id`）或 `request_user_input_async`（`title` + 字符串 `options`）时，优先用其单个问题。
+- 使用 `AskUserQuestion`、`request_user_input` 或 `request_user_input_async` 发起方案批准时，问题正文（`question` 或 `title`）须包含 `workflow-confirm:<任务ID>:<轮次ID>:<control_digest>:approval`（前后用空白隔开），并提供至少两个不重复选项：标签 `批准方案` 及至少一个不批准选项（如 `需要修改`）。仅当用户选中 `批准方案` 时才会落库批准。
 - 仅当当前会话缺少原生点选工具（如 Cursor，或 Codex/Claude Code 未暴露对应工具）时，才降级使用上面的 `request-confirmation` 命令并改为 `--kind approval`，先核对 `confirmation.hook_active` 后再以纯文本 `批准方案` 引导用户单独回复（钩子亦兼容常见成对 Markdown/引号包裹）。准备批准前使用最新版本，登记成功后以 `status` 为准。终端 `confirm-tier` 和 `approve-proposal` 保留给显式选择 CLI 的用户；终端交互确认会自动在状态目录 `reviews/` 下生成并弹出 Markdown 审阅稿（确认后输出简洁回执，支持 `--no-open`/`--json`），也可随时运行 `render-md --task <任务ID> [--open]` 导出只读审阅稿。
 
 人工确认仅为流程证据，不是可信签署；TTY、actor 或模型自报不提供抗程序代答、同账号防篡改或完整写入路径覆盖。插件不是安全沙箱。
