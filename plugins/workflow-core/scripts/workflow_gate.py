@@ -6,7 +6,7 @@ from pathlib import Path
 import sys
 
 sys.path.insert(0, str(Path(__file__).parent))
-from host_gate import context, pre_tool, project_root, safe_shell_input
+from host_gate import context, pre_tool, project_root, record_hook_activity, safe_shell_input
 
 
 def codex():
@@ -31,8 +31,10 @@ def handle(event, root=None):
     """旧 disabled 文件与 engine.enabled 均不再成为门禁绕过条件。"""
     if not isinstance(event, dict):
         raise ValueError("事件必须是 JSON 对象")
-    if project_root(event.get("cwd"), event.get("session_id")) is None:
+    resolved_root = project_root(event.get("cwd"), event.get("session_id"))
+    if resolved_root is None:
         return
+    record_hook_activity(resolved_root, event)
     if event.get("hook_event_name") == "PreToolUse":
         reason = pre_tool(event)
         if reason:

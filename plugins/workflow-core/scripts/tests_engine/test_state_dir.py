@@ -525,6 +525,115 @@ class StateDirTests(unittest.TestCase):
                 self.assertEqual(res["task"], "T1")
                 self.assertTrue(any(p.name.startswith("confirmation-") for p in (root / ".speclock").iterdir()))
 
+    def test_hook_activity_and_chat_confirmation_keep_speclock_clean(self):
+        with tempfile.TemporaryDirectory() as folder:
+            base = Path(folder).resolve()
+            root = base / "repo"
+            _init_repo(root)
+            plan_digest = hashlib.sha256(
+                json.dumps(_minimal_plan(), ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
+            ).hexdigest()
+            before = capture(root, plan_digest)
+
+            codex_home = base / "codex-home"
+            key = hashlib.sha256(str(root).encode()).hexdigest()
+            old_db = codex_home / "workflow-engine" / key / "state.sqlite"
+            Engine(root, old_db).create("T-MIG", "light", ["A1"], _minimal_plan(), "old-1", details=_minimal_details())
+
+            env = _clean_env(codex_home)
+            gate = SCRIPTS / "workflow_gate.py"
+            read_proc = subprocess.run(
+                [sys.executable, str(gate)],
+                input=json.dumps({"cwd": str(root), "session_id": "sess-hook", "hook_event_name": "PreToolUse", "tool_name": "Read", "tool_input": {"file_path": "docs/standards.md"}}),
+                capture_output=True,
+                text=True,
+                env={**env, "WORKFLOW_HOST": "codex"},
+            )
+            self.assertEqual(read_proc.returncode, 0, read_proc.stderr)
+            self.assertTrue(any(p.name.startswith("hook-session-") for p in (root / ".speclock").iterdir()))
+            self.assertFalse((root / ".speclock" / "state.sqlite").exists())
+            self.assertEqual((root / ".speclock" / ".gitignore").read_text(encoding="utf-8"), "*\n")
+            self.assertEqual(capture(root, plan_digest), before)
+            git_status = subprocess.run(
+                ["git", "-C", str(root), "status", "--porcelain"],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            self.assertEqual(git_status.stdout.strip(), "")
+
+            # hook-session-* 已存在但 state.sqlite 尚未创建时，仍能正确检测并迁移旧版 state.sqlite。
+            migrated = subprocess.run(
+                [sys.executable, str(CLI), "--root", str(root), "status", "--task", "T-MIG"],
+                capture_output=True,
+                text=True,
+                env=env,
+            )
+            self.assertEqual(migrated.returncode, 0, migrated.stdout + migrated.stderr)
+            self.assertIn("已将旧状态库迁移至", migrated.stderr)
+            self.assertEqual(json.loads(migrated.stdout)["task"]["id"], "T-MIG")
+
+            for event in (
+                {"cwd": str(root), "session_id": "sess-hook", "hook_event_name": "SessionStart"},
+                {"cwd": str(root), "session_id": "sess-hook", "hook_event_name": "UserPromptSubmit", "prompt": "检查"},
+            ):
+                proc = subprocess.run(
+                    [sys.executable, str(gate)],
+                    input=json.dumps(event),
+                    capture_output=True,
+                    text=True,
+                    env={**env, "WORKFLOW_HOST": "codex"},
+                )
+                self.assertEqual(proc.returncode, 0, proc.stderr)
+
+            prep = subprocess.run(
+                [
+                    sys.executable,
+                    str(CLI),
+                    "--root",
+                    str(root),
+                    "prepare",
+                    "--task",
+                    "T-NEW",
+                    "--tier",
+                    "轻量",
+                    "--acceptance",
+                    "A1",
+                    "--details-json",
+                    json.dumps(_minimal_details(), ensure_ascii=False),
+                    "--executor",
+                    "codex",
+                    "--session",
+                    "sess-hook",
+                    "--request-tier",
+                ],
+                capture_output=True,
+                text=True,
+                env=env,
+            )
+            self.assertEqual(prep.returncode, 0, prep.stdout + prep.stderr)
+            prep_payload = json.loads(prep.stdout)
+            self.assertTrue(prep_payload["confirmation"]["hook_active"])
+            self.assertEqual(prep_payload["confirmation"]["hook_host"], "codex")
+
+            confirm = subprocess.run(
+                [sys.executable, str(gate)],
+                input=json.dumps({"cwd": str(root), "session_id": "sess-hook", "hook_event_name": "UserPromptSubmit", "prompt": "**`选标准档`**"}),
+                capture_output=True,
+                text=True,
+                env={**env, "WORKFLOW_HOST": "codex"},
+            )
+            self.assertEqual(confirm.returncode, 0, confirm.stderr)
+            self.assertIn("ENGINE_CONFIRMATION_RECORDED", confirm.stdout)
+
+            task = Engine(root, workflow_engine_cli.default_db(root)).status("T-NEW")
+            self.assertEqual(task["tier"], "standard")
+            self.assertNotIn("tier_confirmation", task["missing"])
+            self.assertEqual(
+                subprocess.run(["git", "-C", str(root), "status", "--porcelain"], capture_output=True, text=True, check=True).stdout.strip(),
+                "",
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

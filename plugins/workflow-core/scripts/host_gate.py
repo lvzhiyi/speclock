@@ -6,6 +6,7 @@ from pathlib import Path
 import re
 import shlex
 import tempfile
+import time
 import uuid
 from contextvars import ContextVar
 
@@ -20,6 +21,22 @@ SHELL_TOOLS = {"Bash", "shell", "exec_command", "run_shell_command", "Shell"}
 PLANNING_EDIT_TOOLS = {"Write", "Edit", "apply_patch"}
 EDIT_TOOLS = {"Edit", "Write", "MultiEdit", "NotebookEdit", "apply_patch"}
 TIER_LABELS = {"轻量档": "light", "标准档": "standard", "完整档": "full"}
+CHAT_REPLY_WRAPPERS = (
+    ("**", "**"),
+    ("__", "__"),
+    ("*", "*"),
+    ("_", "_"),
+    ("`", "`"),
+    ("「", "」"),
+    ("『", "』"),
+    ("“", "”"),
+    ("‘", "’"),
+    ('"', '"'),
+    ("'", "'"),
+    ("【", "】"),
+)
+CHAT_STRIP_CHARS = " \t\r\n\u3000\u200b\ufeff"
+HOOK_SESSION_PREFIX = "hook-session-"
 CONFIRM_HELP = ("ENGINE_CONFIRMATION_UNSUPPORTED：当前宿主回调没有匹配的用户确认。"
                 "请用 request-confirmation 准备聊天确认，并在 Agent 窗口展示回复选项。"
                 "确认绑定当前任务、轮次、版本及控制摘要。")
@@ -296,20 +313,152 @@ def matches_confirmation(event, task, pending):
         value == pending.get(key) for key, value in confirmation_target(task, pending["action"]).items())
 
 
+def hook_activity_path(root, session):
+    from workflow_engine_cli import default_db
+    name = hashlib.sha256(str(session).encode()).hexdigest()
+    return default_db(root).parent / (HOOK_SESSION_PREFIX + name + ".json")
+
+
+def read_hook_activity(root, session):
+    if not isinstance(session, str) or not 0 < len(session) <= 512:
+        return None
+    path = hook_activity_path(root, session)
+    if path.parent.is_symlink() or path.is_symlink() or not path.is_file():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def record_hook_activity(root, event):
+    """最佳努力记录当前会话已触发的宿主钩子事件，绝不阻断门禁主路径。"""
+    try:
+        if not isinstance(event, dict):
+            return
+        session = event.get("session_id")
+        event_name = event.get("hook_event_name")
+        if not isinstance(session, str) or not 0 < len(session) <= 512:
+            return
+        if not isinstance(event_name, str) or not event_name.strip():
+            return
+        host = os.environ.get("WORKFLOW_HOST") or "claude"
+        path = hook_activity_path(root, session)
+        existing = read_hook_activity(root, session) or {}
+        raw_events = existing.get("events") if isinstance(existing.get("events"), list) else []
+        events = [item for item in raw_events if isinstance(item, str) and item]
+        if existing.get("host") == host and event_name in events:
+            return
+        if event_name not in events:
+            events.append(event_name)
+        payload = {
+            "session_id": session,
+            "host": host,
+            "events": events,
+            "updated_at": round(time.time(), 3),
+        }
+        save_pending(path, payload, root=root)
+    except Exception:
+        return
+
+
+def detect_host():
+    """仅从显式宿主或会话级环境变量推断宿主，避免误读全局目录变量。"""
+    explicit = os.environ.get("WORKFLOW_HOST")
+    if explicit:
+        return explicit
+    if os.environ.get("CODEX_THREAD_ID"):
+        return "codex"
+    if os.environ.get("CURSOR_PROJECT_DIR") or os.environ.get("CURSOR_PLUGIN_ROOT"):
+        return "cursor"
+    if os.environ.get("CLAUDE_PLUGIN_ROOT") or os.environ.get("CLAUDECODE"):
+        return "claude"
+    return None
+
+
+def _inactive_hook_warning(host_hint):
+    if host_hint == "codex":
+        guide = "请先在 Codex 的 Settings → Hooks（或 CLI /hooks）中信任并启用 workflow-core@speclock 的全部钩子，然后新开/重启会话重试；"
+    elif host_hint == "cursor":
+        guide = "请先确认已在 Cursor 中启用 workflow-core 插件与 hooks/cursor.json 钩子并重新加载会话；"
+    elif host_hint == "claude":
+        guide = "请先确认已在 Claude Code 中启用 workflow-core 插件与 UserPromptSubmit 钩子；"
+    else:
+        guide = "请先在宿主中启用并信任 workflow-core 的插件钩子（如 Codex 的 Settings → Hooks 或 /hooks）；"
+    return (
+        "ENGINE_HOOK_INACTIVE：当前会话未检测到 SpecLock Hook 运行，聊天定档/批准回复不会被自动登记。"
+        + guide
+        + "或改用交互终端执行 confirm-tier / approve-proposal，不要让用户反复发送聊天口令。"
+    )
+
+
+def hook_confirmation_status(root, session):
+    activity = read_hook_activity(root, session)
+    if not activity:
+        return {
+            "hook_active": False,
+            "hook_events": [],
+            "hook_warning": _inactive_hook_warning(detect_host()),
+        }
+    raw_events = activity.get("events")
+    events = [item for item in raw_events if isinstance(item, str) and item] if isinstance(raw_events, list) else []
+    hook_host = activity.get("host") if isinstance(activity.get("host"), str) and activity.get("host") else None
+    hook_active = "UserPromptSubmit" in events
+    result = {"hook_active": hook_active, "hook_events": events}
+    if hook_host:
+        result["hook_host"] = hook_host
+    if not hook_active:
+        observed = ", ".join(events) if events else "无"
+        result["hook_warning"] = (
+            f"ENGINE_HOOK_INACTIVE：当前会话仅检测到部分钩子（{observed}），尚未检测到 UserPromptSubmit / beforeSubmitPrompt 回调，聊天定档/批准回复可能无法被自动登记。"
+            "请在宿主中确认已信任并启用 UserPromptSubmit / beforeSubmitPrompt 钩子，或改用交互终端执行 confirm-tier / approve-proposal。"
+        )
+    return result
+
+
+def normalize_chat_reply(prompt):
+    """剥离首尾成对 Markdown 标记和常见引号，同时保留内部结构。"""
+    text = prompt.strip(CHAT_STRIP_CHARS)
+    while text:
+        stripped = False
+        for left, right in CHAT_REPLY_WRAPPERS:
+            if len(text) > len(left) + len(right) and text.startswith(left) and text.endswith(right):
+                text = text[len(left):len(text) - len(right)].strip(CHAT_STRIP_CHARS)
+                stripped = True
+                break
+        if not stripped:
+            break
+    return text
+
+
+def parse_chat_confirmation_reply(prompt):
+    """严格匹配纯确认口令（兼容首尾成对包裹），拒绝自然语言句子。"""
+    if not isinstance(prompt, str):
+        return None, None
+    reply = normalize_chat_reply(prompt)
+    if reply == "批准方案":
+        return "approval", None
+    tier = TIER_LABELS.get(reply[1:]) if reply.startswith("选") else None
+    if tier:
+        return "tier_confirmation", tier
+    return None, None
+
+
 def request_chat_confirmation(root, task, version, session, action, request):
     """登记待回应的版本；CLI 不写入任何人工确认凭据。"""
     from workflow_engine.model import EngineError
-    host = os.environ.get("WORKFLOW_HOST", "claude")
-    if host not in {"cursor", "codex", "claude"} or binding_error({"session_id": session}, task) or task["version"] != version:
+    explicit_host = os.environ.get("WORKFLOW_HOST") or None
+    if (explicit_host is not None and explicit_host not in {"cursor", "codex", "claude"}) or binding_error({"session_id": session}, task) or task["version"] != version:
         raise EngineError("CONFIRMATION_INVALID", "确认请求须使用当前任务版本和绑定会话")
     missing = set(task["missing"])
     if (task["state"] != "created" or action not in {"tier_confirmation", "approval"} or action not in missing or
             (action == "approval" and {"tier_confirmation", "proposal", "steps", "verify_config"} & missing)):
         raise EngineError("CONFIRMATION_INVALID", "当前任务未等待此确认，或方案尚未就绪")
     pending = dict(confirmation_target(task, action), request=request)
-    save_pending(pending_path(root, session, host + ":chat:"), pending, root=root)
+    save_pending(pending_path(root, session, "chat:"), pending, root=root)
     replies = ["选" + label for label in TIER_LABELS] if action == "tier_confirmation" else ["批准方案"]
-    return dict(pending, replies=replies)
+    return dict(pending, replies=replies, **hook_confirmation_status(root, session))
 
 
 def chat_confirmation(event, root):
@@ -318,15 +467,16 @@ def chat_confirmation(event, root):
     prompt, session = event.get("prompt"), event.get("session_id")
     if not isinstance(prompt, str) or not isinstance(session, str) or not session:
         return None
-    reply = prompt.strip()
-    tier = TIER_LABELS.get(reply[1:]) if reply.startswith("选") else None
-    action = "approval" if reply == "批准方案" else "tier_confirmation" if tier else None
+    action, tier = parse_chat_confirmation_reply(prompt)
     if not action:
         return None
-    host = os.environ.get("WORKFLOW_HOST", "claude")
-    path = pending_path(root, session, host + ":chat:")
-    if not path.is_file():
-        return None
+    host = os.environ.get("WORKFLOW_HOST") or "claude"
+    path = pending_path(root, session, "chat:")
+    if not path.is_file() or path.is_symlink():
+        legacy_path = pending_path(root, session, host + ":chat:")
+        if not legacy_path.is_file() or legacy_path.is_symlink():
+            return None
+        path = legacy_path
     pending = json.loads(path.read_text(encoding="utf-8"))
     if pending["action"] != action:
         return None

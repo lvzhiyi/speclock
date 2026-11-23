@@ -22,7 +22,7 @@ CLI `create --details` 必填且必须为 JSON 对象（包括拒绝 null）；C
 
 - `create(task_id,tier,acceptance,plan,request_id,details=...)`：登记任务，不偷偷补齐目标和来源。任务字段 `goal/scope/acceptance/source/dependencies` 缺失呈现 missing。依赖使用 `{id,status}`，空列表表示无依赖。会阻止实施的待确认项按原问题编号登记为 `pending`；状态为 `done` 后才满足该依赖。Agent 按 [开工检查](../../plugins/workflow-core/skills/kickoff/SKILL.md#待确认项的追问与恢复) 向用户追问，并在取得结论后用 `update-task` 更新原依赖。
 - `confirm_tier(..., actor, selected_tier=None)`：确认当前档位，或在待定档轮次内原子地记录用户选中的档位。选中档位需要不同的步骤、方案或验证计划时，保留选择并报告待补项。
-- `request-confirmation`：由 Agent 为当前任务、轮次、版本及绑定会话准备聊天确认。命令仅登记请求。宿主通过用户消息钩子处理档位回复或完整档的单独方案批准。
+- `request-confirmation`：由 Agent 为当前任务、轮次、版本及绑定会话准备聊天确认（使用宿主无关聊天通道，兼容旧版宿主前缀通道；亦在 `prepare --request-tier` 中复用）。命令仅登记请求，并返回 `hook_active` / `hook_events` / `hook_host` / `hook_warning` 诊断字段以识别未触发 `UserPromptSubmit` / `beforeSubmitPrompt` 的会话；宿主用户消息钩子在剥离首尾成对 Markdown/引号包裹后严格匹配纯口令并登记确认。
 - `approve_proposal(..., actor, control_digest)`：完整档专用批准。方案必需 goal、scope、impact、risk、rollback、acceptance，以及任务结构化 steps；批准绑定当前轮次和控制摘要。标准档 3–5 步短计划无需方案审批，轻量至少一项必要实施记录。
 - `register_baseline(..., receipt)`：供可信读取组件登记成功完整读取回执。receipt 为 `{path,sha256,bytes_read,complete:true,executor,session_id,round_id}`，必须匹配当前 executor/session，登记时引擎附加 binding_version；readiness 只使用当前绑定代次的基线。路径必须在声明 baseline 内、为根目录内普通非链接文件；当前内容哈希和字节数必须一致。缺失、截断、错误轮次不可用。此接口验证回执一致性，不证明阅读理解或组件身份。
 - `bind_executor(...,executor,session_id)`：显式绑定轮次主执行者与会话；切换任一字段递增 binding_version，旧读取与 TDD 记录不能借用，即使切回旧身份仍须重新读取。人工档位确认和方案批准保持有效，当前验证/评审成功失效。宿主可检查 rounds[-1].executor/session_id/binding_version 和 missing 中 executor_binding/baseline。绑定是流程属性，不是身份认证。
@@ -128,7 +128,7 @@ we repair --task T1 --version VERSION --file repair-steps.json --reason 原范�
 
 ## 状态目录
 
-- **默认位置**：项目级状态（`state.sqlite`、`confirmation-*.json`、`planning-*.json`、`reviews/`、`dashboard.json`）默认保存在 `<项目根>/.speclock/`，同一项目下 CLI、Hooks 与看板共享同一真相源，适配 Codex `workspace-write` 等默认沙箱。
+- **默认位置**：项目级状态（`state.sqlite`、`confirmation-*.json`、`hook-session-*.json`、`planning-*.json`、`reviews/`、`dashboard.json`）默认保存在 `<项目根>/.speclock/`，同一项目下 CLI、Hooks 与看板共享同一真相源，适配 Codex `workspace-write` 等默认沙箱。
 - **自动忽略与防护**：首次写入时创建 `.speclock/`（`0700`）与 `.speclock/.gitignore`（内容为 `*\n`，`0600`），不改动项目根 `.gitignore`；源码快照硬编码跳过 `.speclock/`；门禁拦截原生编辑工具直接修改 `.speclock/`（返回 `ENGINE_STATE_PROTECTED`）。只读查询缺库时不创建目录，返回 `NOT_FOUND` 或空列表。
 - **外部模式**：显式设置 `WORKFLOW_ENGINE_HOME`（按项目根 SHA-256 分目录，不写 `.gitignore`）或传入 `--db` 时，仍按项目外目录处理；其他落入 `root` 内的路径或符号链接一律拒绝并返回 `DB_LOCATION`。权限不足或只读数据库返回 `STATE_NOT_WRITABLE` 并给出修复指引。
 - **旧库自动迁移**：未设置 `WORKFLOW_ENGINE_HOME` 且未传 `--db` 时，若新库不存在而旧库 `$CODEX_HOME/workflow-engine/<sha256>/state.sqlite`（默认 `~/.codex/workflow-engine/...`）存在且非符号链接，引擎 CLI 与门禁 `load_task` 会以只读 URI（`?mode=ro`）通过 `sqlite3.backup()` 原子复制到 `<项目根>/.speclock/state.sqlite`（`0600`），保留旧库不删除，并在 stderr 输出一行提示；看板只读查询仅展示迁移提示，不执行写入。

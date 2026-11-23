@@ -353,6 +353,47 @@ class CursorGateTests(unittest.TestCase):
         self.assertTrue(host_gate.dashboard_command("WORKFLOW_HOST=cursor python3 " + dashboard + " on"))
         self.assertFalse(host_gate.dashboard_command("WORKFLOW_HOST=cursor python3 " + dashboard + " on; touch injected"))
 
+    def test_chat_confirmation_works_without_workflow_host_and_tolerates_markdown(self):
+        from workflow_engine.engine import Engine
+        from workflow_engine_cli import default_db
+
+        subprocess.run(["git", "init", "-q", str(self.root)], check=True)
+        (self.root / "ai-workflow.yaml").write_text("version: 1\nverify:\n  light: 'true'\n  full: git status --short\n", encoding="utf-8")
+        engine = Engine(self.root, default_db(self.root))
+        check = {"id": "all", "argv": ["true"], "cwd": ".", "timeout": 2, "covers": ["format", "analyze", "test"], "acceptance": ["A1"]}
+        plan = {"version": 1, "checks": [check]}
+        task = engine.create("T1", "light", ["A1"], plan, "create", details={"goal": "目标", "scope": ["src"], "source": "用户", "steps": [{"id": "s1", "title": "修改"}]})
+        task = engine.bind_executor("T1", task["version"], "bind", "agent", "conv-1")
+
+        clean_env = {k: v for k, v in os.environ.items() if k not in {"WORKFLOW_HOST", "CODEX_THREAD_ID", "CURSOR_PROJECT_DIR", "CURSOR_PLUGIN_ROOT", "CLAUDE_PLUGIN_ROOT", "CLAUDECODE"}}
+        self.assertEqual(self.call(dict(self.event(conversation_id="conv-1"), hook_event_name="beforeSubmitPrompt", prompt="开始")), {"continue": True})
+
+        def request(current, action):
+            cli = [sys.executable, str(SCRIPTS / "workflow_engine_cli.py"), "--root", str(self.root), "request-confirmation", "--task", "T1", "--version", str(current["version"]), "--session", "conv-1", "--kind", action]
+            return json.loads(subprocess.run(cli, text=True, capture_output=True, env=clean_env).stdout)
+
+        prepared = request(task, "tier_confirmation")
+        self.assertTrue(prepared["ok"], prepared)
+        self.assertTrue(prepared["confirmation"]["hook_active"])
+        self.assertEqual(prepared["confirmation"]["hook_host"], "cursor")
+        self.assertNotIn("hook_warning", prepared["confirmation"])
+
+        self.call(dict(self.event(conversation_id="conv-1"), hook_event_name="beforeSubmitPrompt", prompt="选完整档？"))
+        self.assertEqual(engine.status("T1")["version"], task["version"])
+        self.call(dict(self.event(conversation_id="conv-1"), hook_event_name="beforeSubmitPrompt", prompt="**`选完整档`**\n"))
+        selected = engine.status("T1")
+        self.assertEqual(selected["tier"], "full")
+        self.assertNotIn("tier_confirmation", selected["missing"])
+
+        proposal = {key: "内容" for key in ("goal", "scope", "impact", "risk", "rollback", "acceptance")}
+        full_plan = dict(plan, checks=[dict(check, argv=["git", "status", "--short"])])
+        ready = engine.update_task("T1", selected["version"], "proposal", {"plan": full_plan, "proposal": proposal})
+        approved_req = request(ready, "approval")
+        self.assertTrue(approved_req["ok"], approved_req)
+        self.assertTrue(approved_req["confirmation"]["hook_active"])
+        self.call(dict(self.event(conversation_id="conv-1"), hook_event_name="beforeSubmitPrompt", prompt="「批准方案」"))
+        self.assertNotIn("approval", engine.status("T1")["missing"])
+
 
 if __name__ == "__main__":
     unittest.main()

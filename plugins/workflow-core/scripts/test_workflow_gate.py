@@ -59,6 +59,7 @@ class GateTests(unittest.TestCase):
                     result = self.hook(event_name, host, cwd=repo)
                     self.assertEqual(result.returncode, 0)
                     self.assertEqual(result.stdout, "")
+                    self.assertFalse((repo / ".speclock").exists())
 
     def test_malformed_json_is_explicit_nonzero(self):
         for payload in ("not json", "[]", "null"):
@@ -126,6 +127,60 @@ class GateTests(unittest.TestCase):
                 self.assertTrue(groups)
                 self.assertNotIn("matcher", groups[0])
                 self.assertTrue(all(not h.get("async") for g in groups for h in g["hooks"]))
+
+    def test_prepare_request_tier_diagnostics_and_markdown_codex_chat_reply(self):
+        subprocess.run(["git", "init", "-q", str(self.project)], check=True)
+        (self.project / "rules.md").write_text("规范全文", encoding="utf-8")
+        (self.project / "ai-workflow.yaml").write_text(
+            "version: 1\n"
+            "baseline:\n"
+            "  required:\n"
+            "    - rules.md\n"
+            "verify:\n"
+            f"  light: {sys.executable} -c pass\n"
+            f"  standard: {sys.executable} -c pass\n",
+            encoding="utf-8",
+        )
+        cli = str(HERE / "workflow_engine_cli.py")
+        cli_env = {k: v for k, v in os.environ.items() if not k.startswith("WORKFLOW_") and k not in {"CODEX_THREAD_ID", "CURSOR_PROJECT_DIR", "CURSOR_PLUGIN_ROOT", "CLAUDE_PLUGIN_ROOT", "CLAUDECODE"}}
+        cli_env["WORKFLOW_ENGINE_HOME"] = self.tmp.name
+
+        details = {"goal": "测试定档", "scope": ["src"], "source": "需求", "dependencies": [], "steps": [{"id": "s1", "title": "步骤一"}, {"id": "s2", "title": "步骤二"}, {"id": "s3", "title": "步骤三"}]}
+        prep_proc = subprocess.run(
+            [sys.executable, cli, "--root", str(self.project), "prepare", "--task", "T-CHAT", "--tier", "轻量", "--acceptance", "A1", "--details-json", json.dumps(details, ensure_ascii=False), "--executor", "codex", "--session", "s-codex", "--request-tier"],
+            text=True, capture_output=True, env=cli_env,
+        )
+        self.assertEqual(prep_proc.returncode, 0, prep_proc.stdout + prep_proc.stderr)
+        prep = json.loads(prep_proc.stdout)
+        self.assertFalse(prep["confirmation"]["hook_active"])
+        self.assertIn("ENGINE_HOOK_INACTIVE", prep["confirmation"]["hook_warning"])
+
+        self.assertEqual(self.hook("SessionStart", "codex", session_id="s-codex").returncode, 0)
+        prompt_init = self.hook("UserPromptSubmit", "codex", session_id="s-codex", prompt="开始执行 T-CHAT")
+        self.assertEqual(prompt_init.returncode, 0)
+        self.assertEqual(prompt_init.stdout, "")
+
+        req_proc = subprocess.run(
+            [sys.executable, cli, "--root", str(self.project), "request-confirmation", "--task", "T-CHAT", "--version", str(prep["task"]["version"]), "--session", "s-codex", "--kind", "tier_confirmation"],
+            text=True, capture_output=True, env=cli_env,
+        )
+        self.assertEqual(req_proc.returncode, 0, req_proc.stdout + req_proc.stderr)
+        req = json.loads(req_proc.stdout)
+        self.assertTrue(req["confirmation"]["hook_active"])
+        self.assertEqual(req["confirmation"]["hook_host"], "codex")
+        self.assertNotIn("hook_warning", req["confirmation"])
+
+        reply = self.hook("UserPromptSubmit", "codex", session_id="s-codex", prompt="**`选标准档`**\n")
+        self.assertEqual(reply.returncode, 0, reply.stderr)
+        payload = json.loads(reply.stdout)["hookSpecificOutput"]
+        self.assertEqual(payload["hookEventName"], "UserPromptSubmit")
+        self.assertIn("ENGINE_CONFIRMATION_RECORDED", payload["additionalContext"])
+
+        status_proc = subprocess.run([sys.executable, cli, "--root", str(self.project), "status", "--task", "T-CHAT"], text=True, capture_output=True, env=cli_env)
+        self.assertEqual(status_proc.returncode, 0, status_proc.stderr)
+        task = json.loads(status_proc.stdout)["task"]
+        self.assertEqual(task["tier"], "standard")
+        self.assertNotIn("tier_confirmation", task["missing"])
 
 
 if __name__ == "__main__":

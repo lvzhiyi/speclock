@@ -49,7 +49,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/workflow_engine_cli.py" --root "项目根
 状态默认位于 `<项目根>/.speclock/`（首次写入自动生成 `.speclock/.gitignore` 忽略，禁止用文件编辑工具直接修改；如需外部库可显式设置 `WORKFLOW_ENGINE_HOME` 或 `--db`）。遇到 `STATE_NOT_WRITABLE` 或其他写入失败时，必须如实报告并给出 CLI 返回的修复指引，**禁止提议用聊天记录代替引擎登记**。
 
 继续与总结前读 `status`，必要时读 `snapshot` / `history`。日常新任务优先使用精简复合入口以减少 CLI 往返（底层门禁与原细粒度命令完全等价）：
-- `prepare`：一步创建 v2 任务（可省略 `--plan` 与 `details.baseline`，自动从 `ai-workflow.yaml` 派生）、绑定会话（`--executor` / `--session`）并可选 `--request-tier` 发起聊天定档；
+- `prepare`：一步创建 v2 任务（可省略 `--plan` 与 `details.baseline`，自动从 `ai-workflow.yaml` 派生）、绑定会话（`--executor` / `--session`）并可选 `--request-tier` 发起聊天定档（使用宿主无关聊天通道，漏传 `WORKFLOW_HOST` 也不再写错通道，并内联返回 `confirmation.hook_active` 诊断）；
 - `begin`：人工定档（及完整档批准）落库后，一步核对就绪前置、按 `--max-bytes` 批量输出全部必读基线正文并登记 SHA-256 回执、`start` 开工并可选 `--tdd-json` 记录 TDD 决策；超限时仍报 `BASELINE_BATCH_LIMIT`，回退 `read-baseline --path` 分批；
 - 写操作（`prepare` / `begin` / `finish-step` / `run` / `review` 等）支持省略 `--request`（自动生成 UUID；显式重试/回写恢复仍传原 `--request`），响应内联 `progress` 投影，无需再单独调用 `progress --task`；末步 `finish-step` 支持 `--finish-implementation` 一步进入待验证。
 
@@ -60,7 +60,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/workflow_engine_cli.py" --root "项目根
 先绑定会话并读取 `status`。只有当前轮次缺少 `tier_confirmation` 才邀请用户定档。向用户展示当前任务、实施范围、推荐档位及三个档位的影响。选项标签固定为 `轻量档`、`标准档`、`完整档`，在问题正文或选项说明里标出推荐，保留标签原文。用户选中一项即完成定档。
 
 - Claude Code 优先用 `AskUserQuestion` 的单个 `multiSelect: false` 问题。Codex 在当前会话实际提供 `request_user_input` 时，用其单个带 `id` 的问题。两端的问题正文均包含当前 `workflow-confirm:<任务ID>:<轮次ID>:<control_digest>:tier_confirmation`，标记前后用空白隔开。使用真实工具 schema，并从 `status` 核实回执已入账。
-- Cursor 使用聊天回复。Claude Code 或 Codex 缺少原生工具、钩子未收到匹配回执时，也用聊天回复。Agent 先运行下面的命令登记当前版本，再在同一会话展示三个选项，引导用户单独回复 `选轻量档`、`选标准档` 或 `选完整档`。用户直接发消息即可，命令由 Agent 执行。
+- Cursor 使用聊天回复。Claude Code 或 Codex 缺少原生工具、钩子未收到匹配回执时，也用聊天回复。Agent 先运行下面的命令登记当前版本（聊天确认已使用宿主无关通道，漏传 `WORKFLOW_HOST` 不会写错通道；显式传入仍受支持），并检查返回中的 `confirmation.hook_active`。若 `hook_active` 为 `false`（返回含 `hook_warning`），**不要让用户反复发送聊天口令**，应直接按 `hook_warning` 引导用户在宿主启用并信任插件钩子（如 Codex 的 Settings → Hooks 或 `/hooks` 信任 `workflow-core@speclock` 后新开会话），或提供交互终端 `confirm-tier` 命令。当 `hook_active` 为 `true` 时，在同一会话展示三个选项，直接以纯文本呈现 `选轻量档`、`选标准档` 或 `选完整档` 引导用户单独回复（避免外加 `**` 与反引号组合包裹造成复制困惑；钩子本身也已兼容常见成对 Markdown/引号包裹）。用户直接发消息即可，命令由 Agent 执行。
 
 ```bash
 WORKFLOW_HOST=codex python3 "${CLAUDE_PLUGIN_ROOT}/scripts/workflow_engine_cli.py" \
@@ -68,9 +68,9 @@ WORKFLOW_HOST=codex python3 "${CLAUDE_PLUGIN_ROOT}/scripts/workflow_engine_cli.p
   --session "当前绑定会话" --request "唯一请求ID" --kind tier_confirmation
 ```
 
-示例使用 Codex。在 Cursor 或 Claude Code 中用 `WORKFLOW_HOST=cursor` 或 `WORKFLOW_HOST=claude`，脚本路径使用实际插件根。CLI 仅准备请求，确认由宿主收到用户消息后记录。回复后重新读 `status`。任务版本、轮次或绑定发生变化时，重新登记并展示确认选项。若选中的档位需要补齐步骤、方案或验证计划，先补齐缺项。
+示例使用 Codex。在 Cursor 或 Claude Code 中用 `WORKFLOW_HOST=cursor` 或 `WORKFLOW_HOST=claude`，脚本路径使用实际插件根。CLI 仅准备请求并探测当前会话 Hook 活跃状态，确认由宿主收到用户消息后记录。回复后重新读 `status`。任务版本、轮次或绑定发生变化时，重新登记并展示确认选项。若选中的档位需要补齐步骤、方案或验证计划，先补齐缺项。
 
-完整档按 `tiering` 在会话中展示提案、技术设计和实施步骤，再单独批准。Claude Code 可用 `ExitPlanMode`，在计划包含同格式的 `:approval` 标记。任一宿主也可使用上面的命令，改为 `--kind approval` 并引导用户单独回复 `批准方案`。准备批准前使用最新版本，登记成功后以 `status` 为准。终端 `confirm-tier` 和 `approve-proposal` 保留给显式选择 CLI 的用户；终端交互确认会自动在状态目录 `reviews/` 下生成并弹出 Markdown 审阅稿（确认后输出简洁回执，支持 `--no-open`/`--json`），也可随时运行 `render-md --task <任务ID> [--open]` 导出只读审阅稿。
+完整档按 `tiering` 在会话中展示提案、技术设计和实施步骤，再单独批准。Claude Code 可用 `ExitPlanMode`，在计划包含同格式的 `:approval` 标记。任一宿主也可使用上面的命令，改为 `--kind approval`，同样先核对 `confirmation.hook_active` 后再以纯文本 `批准方案` 引导用户单独回复（钩子亦兼容常见成对 Markdown/引号包裹）。准备批准前使用最新版本，登记成功后以 `status` 为准。终端 `confirm-tier` 和 `approve-proposal` 保留给显式选择 CLI 的用户；终端交互确认会自动在状态目录 `reviews/` 下生成并弹出 Markdown 审阅稿（确认后输出简洁回执，支持 `--no-open`/`--json`），也可随时运行 `render-md --task <任务ID> [--open]` 导出只读审阅稿。
 
 人工确认仅为流程证据，不是可信签署；TTY、actor 或模型自报不提供抗程序代答、同账号防篡改或完整写入路径覆盖。插件不是安全沙箱。
 

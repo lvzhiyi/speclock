@@ -333,3 +333,104 @@ class HostGateTests(unittest.TestCase):
         for cmd in rejected:
             with self.subTest(rejected=cmd), patch.object(host_gate, "load_task", side_effect=ValueError("unbound")):
                 self.assertIsNotNone(host_gate.pre_tool(self.event("Bash", command=cmd)))
+
+    def test_chat_reply_parsing_tolerates_paired_wrappers_and_rejects_prose(self):
+        valid = (
+            ("选标准档", ("tier_confirmation", "standard")),
+            ("`选标准档`", ("tier_confirmation", "standard")),
+            ("**`选标准档`**", ("tier_confirmation", "standard")),
+            ("`**选标准档**`", ("tier_confirmation", "standard")),
+            ("**选轻量档**", ("tier_confirmation", "light")),
+            ("「选完整档」", ("tier_confirmation", "full")),
+            ("【选标准档】", ("tier_confirmation", "standard")),
+            (" \u3000\ufeff“选标准档”\n ", ("tier_confirmation", "standard")),
+            ("```\n选标准档\n```", ("tier_confirmation", "standard")),
+            ("批准方案", ("approval", None)),
+            ("“批准方案”", ("approval", None)),
+            ("**`批准方案`**", ("approval", None)),
+        )
+        for text, expected in valid:
+            with self.subTest(valid=text):
+                self.assertEqual(host_gate.parse_chat_confirmation_reply(text), expected)
+        rejected = ("我建议选完整档", "选标准档？", "**选标准档", "`选标准档` 吧", "请批准方案", "", None, 123)
+        for text in rejected:
+            with self.subTest(rejected=text):
+                self.assertEqual(host_gate.parse_chat_confirmation_reply(text), (None, None))
+
+    def test_chat_confirmation_channel_is_host_agnostic_with_legacy_fallback(self):
+        task = {
+            **self.task("created", missing=["tier_confirmation", "baseline"]),
+            "control_digest": "digest",
+            "tier": "light",
+        }
+        with tempfile.TemporaryDirectory() as home:
+            base_env = {k: v for k, v in os.environ.items() if k not in {"WORKFLOW_HOST", "CODEX_THREAD_ID", "CURSOR_PROJECT_DIR", "CURSOR_PLUGIN_ROOT", "CLAUDE_PLUGIN_ROOT", "CLAUDECODE"}}
+            base_env["WORKFLOW_ENGINE_HOME"] = home
+            with patch.dict(os.environ, base_env, clear=True):
+                with self.assertRaises(Exception):
+                    with patch.dict(os.environ, {"WORKFLOW_HOST": "invalid"}):
+                        host_gate.request_chat_confirmation(self.root, task, 3, "s1", "tier_confirmation", "req-bad")
+                prepared = host_gate.request_chat_confirmation(self.root, task, 3, "s1", "tier_confirmation", "req-1")
+                self.assertFalse(prepared["hook_active"])
+                self.assertIn("ENGINE_HOOK_INACTIVE", prepared["hook_warning"])
+
+            for host in ("codex", "cursor", "claude"):
+                with self.subTest(host=host), \
+                        patch.dict(os.environ, {**base_env, "WORKFLOW_HOST": host}, clear=True), \
+                        patch.object(host_gate, "load_task", return_value=task), \
+                        patch("workflow_engine.engine.Engine") as engine:
+                    event = {"cwd": str(self.root), "session_id": "s1", "hook_event_name": "UserPromptSubmit", "prompt": "**`选标准档`**\n"}
+                    res = host_gate.chat_confirmation(event, self.root)
+                    self.assertIn("ENGINE_CONFIRMATION_RECORDED", res)
+                    engine.return_value.confirm_tier.assert_called_once_with("T1", 3, "req-1", host + " 用户聊天回复", "standard")
+
+            # 删除统一通道文件，验证对旧版宿主前缀通道文件的向后兼容回退。
+            with patch.dict(os.environ, {**base_env, "WORKFLOW_HOST": "codex"}, clear=True), \
+                    patch.object(host_gate, "load_task", return_value=task), \
+                    patch("workflow_engine.engine.Engine") as engine:
+                host_gate.pending_path(self.root, "s1", "chat:").unlink()
+                legacy_pending = dict(host_gate.confirmation_target(task, "tier_confirmation"), request="req-legacy")
+                host_gate.save_pending(host_gate.pending_path(self.root, "s1", "codex:chat:"), legacy_pending, root=self.root)
+                res = host_gate.chat_confirmation({"cwd": str(self.root), "session_id": "s1", "hook_event_name": "UserPromptSubmit", "prompt": "选完整档"}, self.root)
+                self.assertIn("ENGINE_CONFIRMATION_RECORDED", res)
+                engine.return_value.confirm_tier.assert_called_once_with("T1", 3, "req-legacy", "codex 用户聊天回复", "full")
+
+    def test_hook_activity_recording_and_confirmation_diagnostics(self):
+        with tempfile.TemporaryDirectory() as home:
+            base_env = {k: v for k, v in os.environ.items() if k not in {"WORKFLOW_HOST", "CODEX_THREAD_ID", "CURSOR_PROJECT_DIR", "CURSOR_PLUGIN_ROOT", "CLAUDE_PLUGIN_ROOT", "CLAUDECODE"}}
+            base_env["WORKFLOW_ENGINE_HOME"] = home
+            with patch.dict(os.environ, {**base_env, "CODEX_THREAD_ID": "s1"}, clear=True):
+                inactive = host_gate.hook_confirmation_status(self.root, "s1")
+                self.assertFalse(inactive["hook_active"])
+                self.assertEqual(inactive["hook_events"], [])
+                self.assertIn("ENGINE_HOOK_INACTIVE", inactive["hook_warning"])
+                self.assertIn("Settings → Hooks", inactive["hook_warning"])
+
+            with patch.dict(os.environ, {**base_env, "WORKFLOW_HOST": "codex"}, clear=True):
+                host_gate.record_hook_activity(self.root, {"session_id": "s1", "hook_event_name": "SessionStart"})
+                partial = host_gate.hook_confirmation_status(self.root, "s1")
+                self.assertFalse(partial["hook_active"])
+                self.assertEqual(partial["hook_host"], "codex")
+                self.assertEqual(partial["hook_events"], ["SessionStart"])
+                self.assertIn("UserPromptSubmit", partial["hook_warning"])
+
+                activity_file = host_gate.hook_activity_path(self.root, "s1")
+                with patch.object(host_gate, "save_pending", side_effect=AssertionError("重复事件不应重写磁盘")):
+                    host_gate.record_hook_activity(self.root, {"session_id": "s1", "hook_event_name": "SessionStart"})
+                self.assertTrue(activity_file.is_file())
+
+                host_gate.record_hook_activity(self.root, {"session_id": "s1", "hook_event_name": "UserPromptSubmit"})
+                active = host_gate.hook_confirmation_status(self.root, "s1")
+                self.assertTrue(active["hook_active"])
+                self.assertEqual(active["hook_host"], "codex")
+                self.assertEqual(active["hook_events"], ["SessionStart", "UserPromptSubmit"])
+                self.assertNotIn("hook_warning", active)
+
+        # 异常状态（如 .speclock 为符号链接）时记录活跃状态不得阻断门禁主路径。
+        sym_root = Path(self.tmp.name) / "sym"
+        sym_root.mkdir()
+        outside = Path(self.tmp.name) / "outside"
+        outside.mkdir()
+        (sym_root / ".speclock").symlink_to(outside)
+        with patch.dict(os.environ, {k: v for k, v in os.environ.items() if k != "WORKFLOW_ENGINE_HOME"}, clear=True):
+            host_gate.record_hook_activity(sym_root, {"session_id": "s1", "hook_event_name": "PreToolUse"})
