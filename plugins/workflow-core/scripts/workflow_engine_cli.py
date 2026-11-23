@@ -9,6 +9,7 @@ import sys
 import uuid
 
 TIER_MAP = {'轻量': 'light', '标准': 'standard', '完整': 'full'}
+CONFIRM_ACTIONS = ('confirm-plan', 'confirm-tier', 'approve-proposal', 'return-task')
 
 
 class ArgumentError(Exception):
@@ -33,7 +34,7 @@ def parser():
     commands = result.add_subparsers(dest='action', required=True, parser_class=Parser)
     list_command = commands.add_parser('list')
     list_command.add_argument('--active', action='store_true', help='仅显示未终态的活动任务')
-    reads = ('status', 'snapshot', 'history', 'progress')
+    reads = ('status', 'snapshot', 'history', 'progress', 'render-md')
     actions = reads + ('prepare', 'begin', 'create', 'start', 'resume', 'run', 'complete', 'cancel', 'recover', 'confirm-plan', 'confirm-tier', 'request-confirmation', 'approve-proposal', 'read-baseline', 'register-baseline', 'record-tdd', 'finish-step', 'finish-implementation', 'review', 'sync-review-card', 'update-task', 'adopt-protocol', 'bind-executor', 'repair', 'refine-steps', 'return-task')
     for action in actions:
         command = commands.add_parser(action)
@@ -93,6 +94,13 @@ def parser():
             command.add_argument('--round', required=True)
             command.add_argument('--card-path', required=True)
             command.add_argument('--card-id', required=True)
+        if action in CONFIRM_ACTIONS:
+            command.add_argument('--json', action='store_true', help='以 JSON 格式输出确认结果')
+            command.add_argument('--no-open', action='store_true', help='仅在终端展示审阅内容，不自动弹出外部窗口')
+        if action == 'render-md':
+            command.add_argument('--save', action='store_true', help='将审阅 Markdown 保存到项目外审阅目录')
+            command.add_argument('--open', action='store_true', help='保存并尝试在默认应用或编辑器中打开审阅 Markdown')
+            command.add_argument('--json', action='store_true', help='以 JSON 格式输出结果')
     return result
 
 
@@ -110,9 +118,57 @@ def human_confirmation(label):
     # 终端交互保留人工流程属性；同用户程序仍可代答，绝非安全认证。
     if not sys.stdin.isatty():
         raise ArgumentError('人工流程确认须在交互终端执行')
-    print(label + '，请输入 confirm：', file=sys.stderr)
-    if input().strip() != 'confirm':
+    print(label + '，请输入 confirm：', file=sys.stderr, flush=True)
+    try:
+        answer = input().strip()
+    except (EOFError, KeyboardInterrupt):
+        raise ArgumentError('已取消人工确认')
+    if answer != 'confirm':
         raise ArgumentError('未确认人工流程')
+
+
+def confirm_with_markdown(args, task, database, root):
+    if not sys.stdin.isatty():
+        raise ArgumentError('人工流程确认须在交互终端执行')
+    from review_markdown import open_review_file, render_review_markdown, render_terminal_summary, write_review_markdown
+
+    markdown = render_review_markdown(
+        task,
+        action=args.action,
+        actor=getattr(args, 'actor', None),
+        digest=getattr(args, 'digest', None),
+        reason=getattr(args, 'reason', None),
+        expected_version=args.version,
+    )
+    review_path = None
+    write_error = None
+    try:
+        review_path = write_review_markdown(database.parent, root, task, markdown, action=args.action)
+    except (OSError, ValueError) as exc:
+        write_error = str(exc)
+
+    opened_with = None
+    open_error = None
+    if review_path is not None:
+        if getattr(args, 'no_open', False):
+            open_error = '已指定 --no-open'
+        else:
+            opened_with, open_error = open_review_file(review_path)
+
+    summary = render_terminal_summary(
+        task,
+        action=args.action,
+        markdown=markdown,
+        review_path=review_path,
+        opened_with=opened_with,
+        open_error=open_error,
+        write_error=write_error,
+        actor=getattr(args, 'actor', None),
+        reason=getattr(args, 'reason', None),
+    )
+    print(summary, file=sys.stderr, flush=True)
+    human_confirmation('确认已由人工审阅此操作')
+    return review_path
 
 
 def baseline_document(engine, path, limit):
@@ -241,6 +297,7 @@ def handle_begin(args, engine):
 
 
 def main(argv=None):
+    args = None
     try:
         args = parser().parse_args(argv)
         if hasattr(args, 'request') and args.request is None:
@@ -248,6 +305,7 @@ def main(argv=None):
         document = None
         documents = None
         confirmation = None
+        review_path = None
         from workflow_engine.engine import Engine
         root = Path(args.root).resolve()
         raw_database = Path(args.db) if args.db else default_db(root)
@@ -266,10 +324,53 @@ def main(argv=None):
         database = raw_database.resolve()
         if args.action == 'request-confirmation' and args.db and database != default_db(root).resolve():
             raise ArgumentError('聊天确认须与宿主使用同一默认状态库')
-        if args.action in ('status', 'snapshot', 'history', 'progress', 'request-confirmation', 'begin') and not database.is_file():
+        if args.action in ('status', 'snapshot', 'history', 'progress', 'render-md', 'request-confirmation', 'begin') and not database.is_file():
             from workflow_engine.model import EngineError
             raise EngineError('NOT_FOUND', '状态库不存在，未执行初始化')
         engine = Engine(root, database)
+        if args.action == 'render-md':
+            from review_markdown import open_review_file, render_review_markdown, write_review_markdown
+
+            task = engine.status(args.task)
+            markdown = render_review_markdown(task)
+            opened_with = None
+            open_error = None
+            if args.open or args.save:
+                try:
+                    review_path = write_review_markdown(database.parent, root, task, markdown)
+                except (OSError, ValueError) as exc:
+                    raise ArgumentError(str(exc)) from exc
+            if args.open and review_path is not None:
+                opened_with, open_error = open_review_file(review_path)
+            if args.json:
+                payload = {
+                    'ok': True,
+                    'task_id': task['id'],
+                    'version': task['version'],
+                    'state': task['state'],
+                    'control_digest': task.get('control_digest'),
+                    'markdown': markdown,
+                }
+                if review_path is not None:
+                    payload['path'] = str(review_path)
+                if args.open:
+                    payload['opened'] = bool(opened_with)
+                    payload['opened_with'] = opened_with
+                    if open_error:
+                        payload['open_error'] = open_error
+                print(json.dumps(payload, ensure_ascii=False))
+            else:
+                if review_path is not None:
+                    if args.open:
+                        if opened_with:
+                            print(f'已保存并在 {opened_with} 中打开：{review_path}', file=sys.stderr, flush=True)
+                        else:
+                            note = f'（{open_error}）' if open_error else ''
+                            print(f'已保存审阅文档：{review_path}{note}', file=sys.stderr, flush=True)
+                    else:
+                        print(f'已保存审阅文档：{review_path}', file=sys.stderr, flush=True)
+                print(markdown, end='' if markdown.endswith('\n') else '\n')
+            return 0
         if args.action == 'create':
             details = input_json(args, 'details')
             if not isinstance(details, dict):
@@ -294,8 +395,8 @@ def main(argv=None):
                 raise EngineError('PROTOCOL_REQUIRED', '旧任务必须先 adopt-protocol，CLI 不执行旧协议变更')
             operation = getattr(engine, args.action.replace('-', '_'), None)
             parameters = [args.task, args.version, args.request]
-            if args.action in ('confirm-plan', 'confirm-tier', 'approve-proposal', 'return-task'):
-                human_confirmation('确认已由人工审阅此操作')
+            if args.action in CONFIRM_ACTIONS:
+                review_path = confirm_with_markdown(args, task, database, root)
             if args.action == 'confirm-plan':
                 parameters.append(args.digest)
             elif args.action == 'confirm-tier':
@@ -339,15 +440,27 @@ def main(argv=None):
             output['documents'] = documents
         if confirmation is not None:
             output['confirmation'] = confirmation
+        if review_path is not None:
+            output['review_path'] = str(review_path)
         if key == 'task' and isinstance(value, dict) and value.get('protocol_version') == 2 and args.action not in ('status', 'snapshot'):
             from agent_progress import project_progress
             output['progress'] = project_progress(value)
-        print(json.dumps(output, ensure_ascii=False))
+        if args.action in CONFIRM_ACTIONS and not getattr(args, 'json', False) and sys.stdout.isatty():
+            from review_markdown import render_confirmation_receipt
+            print(render_confirmation_receipt(args.action, value, progress=output.get('progress'), review_path=review_path))
+        else:
+            print(json.dumps(output, ensure_ascii=False))
         return 0 if passed else 1
     except Exception as error:
         code = 'ARGUMENT' if isinstance(error, ArgumentError) else getattr(error, 'code', 'BLOCKED')
         message = str(error) if isinstance(error, ArgumentError) or hasattr(error, 'code') else '引擎不可用或输入无效'
-        print(json.dumps({'ok': False, 'code': code, 'message': message}, ensure_ascii=False))
+        action = getattr(args, 'action', None)
+        interactive_confirm_error = action in CONFIRM_ACTIONS and sys.stdin.isatty() and sys.stdout.isatty()
+        interactive_render_error = action == 'render-md' and sys.stdout.isatty()
+        if (interactive_confirm_error or interactive_render_error) and not getattr(args, 'json', False):
+            print(f'❌ 操作未完成（{code}）：{message}', file=sys.stderr)
+        else:
+            print(json.dumps({'ok': False, 'code': code, 'message': message}, ensure_ascii=False))
         return 2
 
 

@@ -68,7 +68,7 @@ WORKFLOW_HOST=codex python3 "${CLAUDE_PLUGIN_ROOT}/scripts/workflow_engine_cli.p
 
 示例使用 Codex。在 Cursor 或 Claude Code 中用 `WORKFLOW_HOST=cursor` 或 `WORKFLOW_HOST=claude`，脚本路径使用实际插件根。CLI 仅准备请求，确认由宿主收到用户消息后记录。回复后重新读 `status`。任务版本、轮次或绑定发生变化时，重新登记并展示确认选项。若选中的档位需要补齐步骤、方案或验证计划，先补齐缺项。
 
-完整档按 `tiering` 在会话中展示提案、技术设计和实施步骤，再单独批准。Claude Code 可用 `ExitPlanMode`，在计划包含同格式的 `:approval` 标记。任一宿主也可使用上面的命令，改为 `--kind approval` 并引导用户单独回复 `批准方案`。准备批准前使用最新版本，登记成功后以 `status` 为准。终端 `confirm-tier` 和 `approve-proposal` 保留给显式选择 CLI 的用户。
+完整档按 `tiering` 在会话中展示提案、技术设计和实施步骤，再单独批准。Claude Code 可用 `ExitPlanMode`，在计划包含同格式的 `:approval` 标记。任一宿主也可使用上面的命令，改为 `--kind approval` 并引导用户单独回复 `批准方案`。准备批准前使用最新版本，登记成功后以 `status` 为准。终端 `confirm-tier` 和 `approve-proposal` 保留给显式选择 CLI 的用户；终端交互确认会自动在项目外生成并弹出 Markdown 审阅稿（确认后输出简洁回执，支持 `--no-open`/`--json`），也可随时运行 `render-md --task <任务ID> [--open]` 导出只读审阅稿。
 
 人工确认仅为流程证据，不是可信签署；TTY、actor 或模型自报不提供抗程序代答、同账号防篡改或完整写入路径覆盖。插件不是安全沙箱。
 

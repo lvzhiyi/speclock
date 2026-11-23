@@ -37,7 +37,8 @@ CLI `create --details` 必填且必须为 JSON 对象（包括拒绝 null）；C
 - `update_task(...,changes)`：只接受明确允许的任务字段。goal/scope/tier/acceptance/plan/source/dependencies/baseline/steps/proposal 改变控制摘要，撤销当前批准及相关证据、重置 todos，旧记录保留。选档后首次补齐当前缺失的步骤、方案或验证计划，可以沿用同一档位选择。纯展示措辞使用 note。方案批准绑定 proposal 的 JSON 语义内容。
 - `resume(...)`：同轮继续，只登记活动，不跳门禁、不推测阻塞。`return_task(...,reason,actor)`：人工退回新轮次，旧轮保留、新轮无证据。cancel 后只能人工退回，start/run/resume 均不能自动复活。
 - `cancel(...)`：取消并保持历史；running 期间拒绝取消，避免误报子进程已经停止。`recover(...)` 只恢复已死亡所有者的孤立 running，记 error attempt，不能把异常当成功。
-- `status(task_id)` / `snapshot(task_id)`：只读快照查询，核对当前文件和基线，返回 stale/invalidated 投影但不写任务、事件或版本。`history(task_id)`：只读历史事件。观察失效在下一次成功修改时落库，查询版本仍可用于 CAS。活动缺失不等于阻塞；activity 是明确事件，不根据静默时长造 blocked。
+- `status(task_id)` / `snapshot(task_id)`：只读快照查询，核对当前文件和基线，返回 stale/invalidated 投影但不写任务、事件或版本。`history(task_id)`：只读历史事件。`render-md --task ID [--save] [--open] [--json]`：只读渲染任务方案与状态为 Markdown，`--save`/`--open` 写至项目外状态目录的 `reviews/` 子目录并尝试在默认应用或编辑器中打开（支持 `WORKFLOW_NO_OPEN=1`）。观察失效在下一次成功修改时落库，查询版本仍可用于 CAS。活动缺失不等于阻塞；activity 是明确事件，不根据静默时长造 blocked。
+- 交互确认（`confirm-tier`、`approve-proposal`、`confirm-plan`、`return-task`）：在交互终端输入 `confirm` 前，自动生成项目外 Markdown 审阅稿并尝试打开预览（打开失败或传 `--no-open` / `WORKFLOW_NO_OPEN=1` 时在终端展示完整 Markdown）；确认完成后，交互终端 `stdout` 输出简洁 Markdown 回执，传 `--json` 或管道输出时保留完整 JSON 契约。
 
 ## JSON 输出 schema
 
@@ -90,8 +91,9 @@ Task 的核心结构（新增字段应允许向前兼容）：
 ```sh
 we create --task T1 --tier 标准 --acceptance A1 --plan checks.json --details details.json --request create-T1
 we confirm-tier --task T1 --version 1 --actor 用户 --request tier-T1
-# 完整档才需要；摘要取当前 control_digest，命令会要求人工终端确认。
+# 完整档才需要；摘要取当前 control_digest，命令会生成并弹出项目外 Markdown 审阅稿后要求人工终端确认（支持 --no-open / --json）。
 we approve-proposal --task T1 --version 2 --actor 用户 --digest CONTROL_DIGEST --request approve-T1
+we render-md --task T1 --open
 we bind-executor --task T1 --version 3 --executor cli-reader --session session-1 --request bind-T1
 we read-baseline --task T1 --version 4 --path docs/standards.md --executor cli-reader --session session-1 --max-bytes 65536 --request baseline-T1
 we start --task T1 --version 5 --request start-T1
