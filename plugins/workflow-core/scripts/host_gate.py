@@ -21,6 +21,7 @@ SHELL_TOOLS = {"Bash", "shell", "exec_command", "run_shell_command", "Shell"}
 PLANNING_EDIT_TOOLS = {"Write", "Edit", "apply_patch"}
 EDIT_TOOLS = {"Edit", "Write", "MultiEdit", "NotebookEdit", "apply_patch"}
 TIER_LABELS = {"轻量档": "light", "标准档": "standard", "完整档": "full"}
+APPROVAL_ACCEPT_LABEL = "批准方案"
 CHAT_REPLY_WRAPPERS = (
     ("**", "**"),
     ("__", "__"),
@@ -531,6 +532,26 @@ def offered_tiers(question):
             {option["label"] for option in options} == TIER_LABELS.keys())
 
 
+def offered_approval(question):
+    options = question.get("options")
+    if not isinstance(options, list) or len(options) < 2:
+        return False
+    if not all(isinstance(option, dict) and isinstance(option.get("label"), str) and option["label"].strip() for option in options):
+        return False
+    labels = [option["label"] for option in options]
+    return len(set(labels)) == len(labels) and APPROVAL_ACCEPT_LABEL in labels
+
+
+def extract_native_answer(host, question, response):
+    answers = response.get("answers")
+    key = question.get("id" if host == "codex" else "question")
+    answer = answers.get(key) if isinstance(answers, dict) and len(answers) == 1 and isinstance(key, str) else None
+    if host == "codex":
+        values = answer.get("answers") if isinstance(answer, dict) else None
+        answer = values[0] if isinstance(values, list) and len(values) == 1 else None
+    return answer if isinstance(answer, str) else None
+
+
 def prepare_confirmation(event, root):
     """将待确认目标持久化；回执只消费相同工具调用及当前版本请求。"""
     text, markers = confirmation_markers(event)
@@ -546,19 +567,29 @@ def prepare_confirmation(event, root):
             return error
         data = event.get("tool_input") or {}
         text = json.dumps(data, ensure_ascii=False)
-        action = "approval" if event["tool_name"] == "ExitPlanMode" else "tier_confirmation"
+        tool = event["tool_name"]
+        if tool == "ExitPlanMode" or (len(markers) == 1 and markers[0].endswith(":approval")):
+            action = "approval"
+        else:
+            action = "tier_confirmation"
         marker = "workflow-confirm:" + task["id"] + ":" + task["current_round"] + ":" + task["control_digest"] + ":" + action
         if markers != [marker] or text.count("workflow-confirm:") != 1 or not event.get("tool_use_id"):
             return "ENGINE_CONFIRMATION_REQUIRED：确认请求必须包含 " + marker + "，并提供宿主 tool_use_id。"
-        question = native_question(data)
-        question_text = question.get("question")
-        if action == "tier_confirmation" and ("answers" in data or question.get("multiSelect") or
-                not isinstance(question_text, str) or marker not in question_text.split()):
-            return "ENGINE_CONFIRMATION_REQUIRED：定档须使用用户填写的单选问题。"
-        if host == "codex" and (not offered_tiers(question) or not isinstance(question.get("id"), str) or not question["id"]):
-            return "ENGINE_CONFIRMATION_REQUIRED：定档请求须提供轻量档、标准档和完整档。"
+        if tool != "ExitPlanMode":
+            question = native_question(data)
+            question_text = question.get("question")
+            if ("answers" in data or question.get("multiSelect") or
+                    not isinstance(question_text, str) or marker not in question_text.split()):
+                label = "定档" if action == "tier_confirmation" else "方案批准"
+                return f"ENGINE_CONFIRMATION_REQUIRED：{label}须使用用户填写的单选问题。"
+            if host == "codex" and (not isinstance(question.get("id"), str) or not question["id"]):
+                return "ENGINE_CONFIRMATION_REQUIRED：Codex 原生确认问题须提供非空 id。"
+            if action == "tier_confirmation" and host == "codex" and not offered_tiers(question):
+                return "ENGINE_CONFIRMATION_REQUIRED：定档请求须提供轻量档、标准档和完整档。"
+            if action == "approval" and not offered_approval(question):
+                return "ENGINE_CONFIRMATION_REQUIRED：方案批准单选须提供「批准方案」及至少一个不批准选项。"
         path = pending_path(root, event.get("session_id"))
-        pending = dict(confirmation_target(task, action), host=host, tool=event["tool_name"],
+        pending = dict(confirmation_target(task, action), host=host, tool=tool,
                        call=event["tool_use_id"], input=data, request=uuid.uuid4().hex)
         save_pending(path, pending, root=root)
         return None
@@ -596,17 +627,16 @@ def complete_confirmation(event):
     tier = None
     if pending["action"] == "tier_confirmation":
         question = native_question(pending["input"])
-        answers = response.get("answers")
-        key = question.get("id" if host == "codex" else "question")
-        answer = answers.get(key) if isinstance(answers, dict) and len(answers) == 1 and isinstance(key, str) else None
-        if host == "codex":
-            values = answer.get("answers") if isinstance(answer, dict) else None
-            answer = values[0] if isinstance(values, list) and len(values) == 1 else None
-        if isinstance(answer, str) and offered_tiers(question) and not question.get("multiSelect"):
+        answer = extract_native_answer(host, question, response)
+        if answer is not None and offered_tiers(question) and not question.get("multiSelect"):
             tier = TIER_LABELS.get(answer)
         accepted = tier is not None or (host == "claude" and answer == "确认" and not offered_tiers(question))
-    else:
+    elif pending["tool"] == "ExitPlanMode":
         accepted = response.get("approved") is True
+    else:
+        question = native_question(pending["input"])
+        answer = extract_native_answer(host, question, response)
+        accepted = answer == APPROVAL_ACCEPT_LABEL and offered_approval(question) and not question.get("multiSelect")
     task = load_task(root)
     if not accepted or not matches_confirmation(event, task, pending):
         return "ENGINE_CONFIRMATION_REJECTED：回执未确认或任务/轮次/版本已经变化；" + CONFIRM_HELP

@@ -434,3 +434,31 @@ class HostGateTests(unittest.TestCase):
         (sym_root / ".speclock").symlink_to(outside)
         with patch.dict(os.environ, {k: v for k, v in os.environ.items() if k != "WORKFLOW_ENGINE_HOME"}, clear=True):
             host_gate.record_hook_activity(sym_root, {"session_id": "s1", "hook_event_name": "PreToolUse"})
+
+    def test_native_single_choice_approval_validation_and_receipt(self):
+        task = self.task()
+        task["control_digest"] = "digest"
+        marker = "workflow-confirm:T1:r1:digest:approval"
+        question_text = "请确认完整档方案 " + marker
+        with tempfile.TemporaryDirectory() as home, patch.dict(os.environ, {"WORKFLOW_ENGINE_HOME": home, "WORKFLOW_HOST": "claude"}), patch.object(host_gate, "load_task", return_value=task), patch("workflow_engine.engine.Engine") as engine:
+            bad_inputs = (
+                {"questions": [{"question": question_text, "options": [{"label": "批准方案"}]}]},
+                {"questions": [{"question": question_text, "options": [{"label": "批准方案"}, {"label": "批准方案"}]}]},
+                {"questions": [{"question": question_text, "multiSelect": True, "options": [{"label": "批准方案"}, {"label": "需要修改"}]}]},
+                {"questions": [{"question": question_text, "options": [{"label": "批准方案"}, {"label": "需要修改"}]}], "answers": {question_text: "批准方案"}},
+            )
+            for payload in bad_inputs:
+                bad_event = self.event("AskUserQuestion", **payload)
+                bad_event["tool_use_id"] = "bad-call"
+                self.assertIn("ENGINE_CONFIRMATION_REQUIRED", host_gate.pre_tool(bad_event))
+
+            event = self.event("AskUserQuestion", questions=[{"question": question_text, "multiSelect": False, "options": [{"label": "批准方案"}, {"label": "需要修改"}]}])
+            event["tool_use_id"] = "approve-call"
+            self.assertIsNone(host_gate.pre_tool(event))
+            rejected = dict(event, tool_response={"answers": {question_text: "需要修改"}})
+            self.assertIn("REJECTED", host_gate.post_tool(rejected))
+            engine.return_value.approve_proposal.assert_not_called()
+
+            approved = dict(event, tool_response={"answers": {question_text: "批准方案"}})
+            self.assertIn("RECORDED", host_gate.post_tool(approved))
+            engine.return_value.approve_proposal.assert_called_once()

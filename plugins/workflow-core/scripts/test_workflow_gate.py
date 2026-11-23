@@ -119,6 +119,63 @@ class GateTests(unittest.TestCase):
                 self.assertIn("REJECTED", self.hook("PostToolUse", host, **event, tool_response=answer).stdout)
                 self.assertEqual(engine.status(host)["version"], selected["version"])
 
+    def test_native_single_choice_approval_works_for_codex_and_claude(self):
+        from workflow_engine.engine import Engine
+        from workflow_engine_cli import default_db
+        from unittest.mock import patch
+
+        subprocess.run(["git", "init", "-q", str(self.project)], check=True)
+        with patch.dict(os.environ, {"WORKFLOW_ENGINE_HOME": self.tmp.name}):
+            engine = Engine(self.project, default_db(self.project))
+        for host, tool in (("codex", "request_user_input"), ("claude", "AskUserQuestion")):
+            with self.subTest(host=host):
+                task_id = host + "-approve"
+                plan = {"version": 1, "checks": [{"id": "check", "argv": ["true"], "cwd": ".", "timeout": 2, "covers": ["format", "analyze", "test"], "acceptance": ["A"]}]}
+                proposal = {"goal": "目标", "scope": "仅改 src", "impact": "无", "risk": "低", "rollback": "回退提交", "acceptance": ["A"]}
+                details = {"goal": "目标", "scope": ["src"], "source": "用户", "dependencies": [], "baseline": [], "steps": [{"id": "s1", "title": "步骤一"}, {"id": "s2", "title": "步骤二"}, {"id": "s3", "title": "步骤三"}], "proposal": proposal}
+                task = engine.create(task_id, "full", ["A"], plan, task_id + "-create", details=details)
+                session = "session-approve-" + host
+                task = engine.bind_executor(task_id, task["version"], task_id + "-bind", "agent", session)
+                task = engine.confirm_tier(task_id, task["version"], task_id + "-tier", "用户", "full")
+                self.assertIn("approval", task["missing"])
+
+                marker = f"workflow-confirm:{task_id}:{task['current_round']}:{task['control_digest']}:approval"
+                question = {
+                    "question": "请确认是否批准完整档实施方案 " + marker,
+                    "header": "方案批准",
+                    "options": [
+                        {"label": "批准方案", "description": "批准后进入实施"},
+                        {"label": "需要修改", "description": "退回调整方案"},
+                    ],
+                }
+                if host == "codex":
+                    question["id"] = "workflow_approval"
+                    reject_answer = json.dumps({"answers": {"workflow_approval": {"answers": ["需要修改"]}}}, ensure_ascii=False)
+                    accept_answer = json.dumps({"answers": {"workflow_approval": {"answers": ["批准方案"]}}}, ensure_ascii=False)
+                else:
+                    question["multiSelect"] = False
+                    reject_answer = {"answers": {question["question"]: "需要修改"}}
+                    accept_answer = {"answers": {question["question"]: "批准方案"}}
+
+                # 单选项（无不批准选项）必须被拒绝。
+                only_approve = dict(question, options=[{"label": "批准方案", "description": "唯一项"}])
+                bad_pre = self.hook("PreToolUse", host, session_id=session, tool_name=tool, tool_input={"questions": [only_approve]}, tool_use_id="call-bad")
+                self.assertEqual(json.loads(bad_pre.stdout)["hookSpecificOutput"]["permissionDecision"], "deny")
+
+                event = dict(session_id=session, tool_name=tool, tool_input={"questions": [question]}, tool_use_id="call-approve")
+                self.assertEqual(self.hook("PreToolUse", host, **event).stdout, "")
+                self.assertIn("REJECTED", self.hook("PostToolUse", host, **event, tool_response=reject_answer).stdout)
+                self.assertIn("approval", engine.status(task_id)["missing"])
+
+                self.assertIn("RECORDED", self.hook("PostToolUse", host, **event, tool_response=accept_answer).stdout)
+                approved = engine.status(task_id)
+                self.assertEqual(approved["version"], task["version"] + 1)
+                self.assertNotIn("approval", approved["missing"])
+
+                # 同一回执重放必须被拒绝。
+                self.assertIn("REJECTED", self.hook("PostToolUse", host, **event, tool_response=accept_answer).stdout)
+                self.assertEqual(engine.status(task_id)["version"], approved["version"])
+
     def test_manifests_install_synchronous_wildcard_gate(self):
         for filename in ("hooks.json", "codex.json"):
             manifest = json.loads((HERE.parent / "hooks" / filename).read_text(encoding="utf-8"))
