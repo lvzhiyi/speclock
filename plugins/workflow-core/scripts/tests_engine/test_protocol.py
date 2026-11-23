@@ -266,7 +266,7 @@ class ProtocolTests(unittest.TestCase):
     def test_adopt_legacy_task_has_real_full_path(self):
         plan = {'version': 1, 'checks': [{'id': 'a', 'argv': [sys.executable, '-c', 'pass'], 'cwd': '.', 'timeout': 2, 'covers': ['format', 'analyze', 'test'], 'acceptance': ['A1']}]}
         task = self.e.create('t', 'full', ['A1'], plan, 'old-create')
-        details = {'goal': '目标', 'scope': ['代码'], 'source': '需求', 'dependencies': [], 'baseline': ['baseline.md'], 'steps': [{'id': 's', 'title': '实施'}], 'proposal': {key: '内容' for key in ['goal', 'scope', 'impact', 'risk', 'rollback', 'acceptance']}}
+        details = {'goal': '目标', 'scope': ['code.py'], 'source': '需求', 'dependencies': [], 'baseline': ['baseline.md'], 'steps': [{'id': 's', 'title': '实施'}], 'proposal': {key: '内容' for key in ['goal', 'scope', 'impact', 'risk', 'rollback', 'acceptance']}}
         task = self.call('adopt_protocol', task, details)
         self.assertEqual(task['protocol_version'], 2)
         task = self.call('confirm_tier', task, '人')
@@ -291,6 +291,36 @@ class ProtocolTests(unittest.TestCase):
         self.assertNotEqual(old, task['control_digest'])
         self.assertIn('tier_confirmation', task['missing'])
         self.assertIn('approval', task['missing'])
+
+    def test_scope_must_be_repo_relative_paths(self):
+        plan = {'version': 1, 'checks': [{'id': 'a', 'argv': [sys.executable, '-c', 'pass'], 'cwd': '.', 'timeout': 2, 'covers': ['format', 'analyze', 'test'], 'acceptance': ['A1']}]}
+        base_details = {'goal': '目标', 'source': '需求', 'dependencies': [], 'baseline': ['baseline.md'], 'steps': [{'id': 's', 'title': '实施'}]}
+        invalid_scopes = [
+            'src/code.py',
+            ['登录页、认证与会话'],
+            ['微信授权后查询 /account/info'],
+            ['微信授权后手机号绑定流程'],
+            ['/abs/path'],
+            ['../outside'],
+            ['src/*.py'],
+            ['src\\a.py'],
+            [''],
+        ]
+        for idx, bad_scope in enumerate(invalid_scopes):
+            with self.subTest(bad_scope=bad_scope):
+                with self.assertRaises(EngineError) as ctx:
+                    self.e.create(f'bad-{idx}', 'light', ['A1'], plan, f'req-bad-{idx}', details=dict(base_details, scope=bad_scope))
+                self.assertEqual(ctx.exception.code, 'INPUT_INVALID')
+
+        task = self.e.create('t', 'full', ['A1'], plan, 'req-good', details=dict(base_details, scope=['docs/development/changes/AUTH-R07', 'lib/pages/login.dart', '.'], proposal={key: '内容' for key in ['goal', 'scope', 'impact', 'risk', 'rollback', 'acceptance']}))
+        self.assertEqual(task['scope'], ['docs/development/changes/AUTH-R07', 'lib/pages/login.dart', '.'])
+        with self.assertRaises(EngineError) as ctx:
+            self.call('update_task', task, {'scope': ['微信授权后手机号绑定流程']})
+        self.assertEqual(ctx.exception.code, 'INPUT_INVALID')
+
+        (self.root / '中文目录').mkdir()
+        task = self.call('update_task', task, {'scope': ['中文目录', 'docs/需求.md']})
+        self.assertEqual(task['scope'], ['中文目录', 'docs/需求.md'])
 
 
 if __name__ == '__main__':

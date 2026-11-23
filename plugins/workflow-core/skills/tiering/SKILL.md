@@ -17,7 +17,7 @@ description: 三档人工定档。实施前确认轻量、标准或完整档及�
 
 ## 完整档提案与设计
 
-- 完整档变更目录为 `<docs.dev_docs>/changes/<task-id>/`，默认 `docs/development/changes/<task-id>/`。新任务使用可作为单个目录名的引擎任务 ID。提交范围供人工确认时，将本任务的变更目录列入引擎 `scope`。
+- 完整档变更目录为 `<docs.dev_docs>/changes/<task-id>/`，默认 `docs/development/changes/<task-id>/`。新任务使用可作为单个目录名的引擎任务 ID。提交范围供人工确认时，顶层引擎 `scope` 必须填写仓库相对路径/目录前缀列表（如 `["lib/pages/login", "docs/development/changes/<task-id>"]`），并将本任务变更目录列入其中；业务范围描述写入 `goal` 或 `proposal.scope`，不可写入顶层 `scope`。
 - 请求批准前完成提案与技术设计。提案记录需求来源、目标、范围与非目标、影响、风险、回滚和验收。设计记录实施方式、受影响的模块和关键取舍，按变更内容补充接口、数据或状态流转等细节。
 - 将提案及关键设计决策登记到引擎的 `proposal`（设计决策写入 `proposal.design`），将结构化步骤登记到 `steps`，再用该版本请求批准。
 - 进入实施后，在修改产品代码前将已批准的提案和设计分别保存为同目录的 `proposal.md` 与 `design.md`，提案链接设计。实施步骤和完成进度由引擎维护，文档按需引用稳定的步骤 ID。

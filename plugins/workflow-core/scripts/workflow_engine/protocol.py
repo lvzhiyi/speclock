@@ -34,6 +34,28 @@ def evidence(task, kind):
     return [e for e in current(task)['evidence'] if e['kind'] == kind and e['control_digest'] == task['control_digest'] and e.get('valid', True)]
 
 
+_SCOPE_PUNCTUATION = set('，。、；：！？（）「」【】《》,;!?()[]{}<>')
+
+
+def validate_scope(scope, root=None):
+    """校验顶层 scope 必须为仓库相对路径列表，防止写入业务描述后在实施阶段被门禁拒绝。"""
+    require(isinstance(scope, list), 'INPUT_INVALID', 'scope 必须为仓库相对路径列表（如 ["src", "docs/changes/T1"]），不可填字符串或业务描述')
+    for item in scope:
+        require(isinstance(item, str) and item.strip() and item == item.strip(), 'INPUT_INVALID', 'scope 每一项须为非空且无首尾空白的仓库相对路径')
+        if item == '.':
+            continue
+        require(not item.startswith(('/', '~')) and not (len(item) >= 2 and item[1] == ':' and item[0].isalpha()), 'INPUT_INVALID', f'scope 须为仓库相对路径，不能使用绝对路径：{item}')
+        require('\\' not in item and '*' not in item and '?' not in item, 'INPUT_INVALID', f'scope 不支持反斜杠或通配符，请填写具体仓库路径或目录前缀：{item}')
+        require(not any(ch.isspace() or ch in _SCOPE_PUNCTUATION for ch in item), 'INPUT_INVALID', f'scope 须为仓库路径而非业务描述：{item}')
+        stripped = item[:-1] if item.endswith('/') else item
+        parts = stripped.split('/')
+        require(all(part and part not in {'.', '..'} for part in parts), 'INPUT_INVALID', f'scope 包含非法路径段：{item}')
+        if len(parts) == 1 and '.' not in stripped and not stripped.isascii():
+            exists = root is not None and (Path(root) / stripped).exists()
+            require(exists, 'INPUT_INVALID', f'scope 须为仓库路径而非业务描述：{item}')
+    return scope
+
+
 def validate_steps(steps):
     require(isinstance(steps, list) and all(isinstance(s, dict) and isinstance(s.get('id'), str) and s['id'].strip() and isinstance(s.get('title'), str) and s['title'].strip() for s in steps), 'INPUT_INVALID', '步骤需非空字符串 id/title')
     require(len({s['id'] for s in steps}) == len(steps), 'INPUT_INVALID', '步骤 id 不可重复')
@@ -86,6 +108,8 @@ class ProtocolMixin:
             require(set(details) <= allowed, 'INPUT_INVALID', '未知任务字段')
             if details.get('card') is not None:
                 review_card.validate_binding(self.root, details['card'])
+            if 'scope' in details and details['scope'] is not None:
+                validate_scope(details['scope'], self.root)
             task = dict(copy.deepcopy(details), id=task_id, tier=tier, acceptance=acceptance, plan=copy.deepcopy(plan), plan_digest=plan_hash, root=str(self.root), version=1, protocol_version=2, rounds=[], state='created', phase='planning', results=[], confirmed_digest=None, snapshot=capture(self.root, plan_hash))
             task['control_digest'] = control(task)
             task['verify_config_digest'] = enforce(self.root, task['tier'], task['plan'])
@@ -109,6 +133,8 @@ class ProtocolMixin:
             if details.get('card') is not None:
                 review_card.validate_binding(self.root, details['card'])
             task.update(copy.deepcopy(details))
+            if task.get('scope') is not None:
+                validate_scope(task['scope'], self.root)
             task.update(protocol_version=2, rounds=[], confirmed_digest=None)
             task['control_digest'] = control(task)
             task['verify_config_digest'] = enforce(self.root, task['tier'], task['plan'])
@@ -481,6 +507,8 @@ class ProtocolMixin:
                               and not evidence(task, 'approval'))
             task.update(copy.deepcopy(changes))
             require(task['tier'] in ('light', 'standard', 'full'), 'INPUT_INVALID', '档位无效')
+            if task.get('scope') is not None:
+                validate_scope(task['scope'], self.root)
             validate_steps(task.get('steps', []))
             task['plan_digest'] = validate_plan(task['plan'], task['acceptance'])
             task['verify_config_digest'] = enforce(self.root, task['tier'], task['plan'])

@@ -37,7 +37,7 @@ class CliTests(unittest.TestCase):
                 "argv": [sys.executable, "-c", "pass"], "cwd": ".", "timeout": 2,
                 "covers": ["format", "analyze", "test"], "acceptance": ["A1"]}]}))
             details = base / 'details.json'
-            details.write_text(json.dumps({'goal': '目标', 'scope': ['代码'], 'source': '需求', 'dependencies': [], 'baseline': ['baseline.md'], 'steps': [{'id': 's', 'title': '实施'}]}))
+            details.write_text(json.dumps({'goal': '目标', 'scope': ['src'], 'source': '需求', 'dependencies': [], 'baseline': ['baseline.md'], 'steps': [{'id': 's', 'title': '实施'}]}))
             result = subprocess.run([sys.executable, str(CLI), "--root", str(root),
                 "--db", str(base / "state.sqlite"), "create", "--task", "one",
                 "--tier", "轻量", "--acceptance", "A1", "--plan", str(plan),
@@ -86,7 +86,7 @@ class CliTests(unittest.TestCase):
             subprocess.run(['git', 'init', '-q', str(root)], check=True)
             (root / 'baseline.md').write_text('规范')
             plan = {'version': 1, 'checks': [{'id': 'a', 'argv': [sys.executable, '-c', 'pass'], 'cwd': '.', 'timeout': 2, 'covers': ['format', 'analyze', 'test'], 'acceptance': ['A1']}]}
-            details = {'goal': '目标', 'scope': ['代码'], 'source': '需求', 'dependencies': [], 'baseline': ['baseline.md'], 'steps': [{'id': 's', 'title': '实施'}]}
+            details = {'goal': '目标', 'scope': ['src'], 'source': '需求', 'dependencies': [], 'baseline': ['baseline.md'], 'steps': [{'id': 's', 'title': '实施'}]}
             (base / 'plan.json').write_text(json.dumps(plan))
             (base / 'details.json').write_text(json.dumps(details))
             count = 0

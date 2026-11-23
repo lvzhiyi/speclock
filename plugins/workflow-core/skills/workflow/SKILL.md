@@ -49,7 +49,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/workflow_engine_cli.py" --root "项目根
 状态默认位于 `<项目根>/.speclock/`（首次写入自动生成 `.speclock/.gitignore` 忽略，禁止用文件编辑工具直接修改；如需外部库可显式设置 `WORKFLOW_ENGINE_HOME` 或 `--db`）。遇到 `STATE_NOT_WRITABLE` 或其他写入失败时，必须如实报告并给出 CLI 返回的修复指引，**禁止提议用聊天记录代替引擎登记**。
 
 继续与总结前读 `status`，必要时读 `snapshot` / `history`。日常新任务优先使用精简复合入口以减少 CLI 往返（底层门禁与原细粒度命令完全等价）：
-- `prepare`：一步创建 v2 任务（可省略 `--plan` 与 `details.baseline`，自动从 `ai-workflow.yaml` 派生）、绑定会话（`--executor` / `--session`）并可选 `--request-tier` 发起聊天定档（使用宿主无关聊天通道，漏传 `WORKFLOW_HOST` 也不再写错通道，并内联返回 `confirmation.hook_active` 诊断）；
+- `prepare`：一步创建 v2 任务（可省略 `--plan` 与 `details.baseline`，自动从 `ai-workflow.yaml` 派生；`details.scope` 必须为仓库相对路径/目录前缀列表，业务范围写入 `goal` / `proposal.scope`）、绑定会话（`--executor` / `--session`）并可选 `--request-tier` 发起聊天定档（使用宿主无关聊天通道，漏传 `WORKFLOW_HOST` 也不再写错通道，并内联返回 `confirmation.hook_active` 诊断）；
 - `begin`：人工定档（及完整档批准）落库后，一步核对就绪前置、按 `--max-bytes` 批量输出全部必读基线正文并登记 SHA-256 回执、`start` 开工并可选 `--tdd-json` 记录 TDD 决策；超限时仍报 `BASELINE_BATCH_LIMIT`，回退 `read-baseline --path` 分批；
 - 写操作（`prepare` / `begin` / `finish-step` / `run` / `review` 等）支持省略 `--request`（自动生成 UUID；显式重试/回写恢复仍传原 `--request`），响应内联 `progress` 投影，无需再单独调用 `progress --task`；末步 `finish-step` 支持 `--finish-implementation` 一步进入待验证。
 
