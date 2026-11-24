@@ -34,6 +34,7 @@ CLI `create --details` 必填且必须为 JSON 对象（包括拒绝 null）；C
 - `run(...)`：沿用真实 runner、检查计划和快照；执行前后内容一致且每项真实退出零，才得到 passed。失败、超时、异常分别进入 attempt 明细；同范围重跑追加新 attempt。执行期间不持数据库写锁。
 - `review(...,report)`：验证通过且证据仍有效后，双轴结构化评审；通过得到 review_passed，是 Agent 终态，不再要求人工交付。必修未解决不能通过，也不能在重试报告中删除后逃逸；同轴同 ID 显式 resolved=true 才关闭。
 - `sync_review_card(...,round_id,card)`：当前轮次已有有效评审时显式补回写任务卡，复用原验证和评审记录。
+- `close_superseded(task_id,version,request)` / `reconcile_cards()`：按任务卡结案状态自动将未开工本地任务关闭为 `cancelled`（记录 `card_superseded` 证据与 `cancel.reason='card_superseded'`）；已开工冲突只报告不改库。
 - `update_task(...,changes)`：只接受明确允许的任务字段。goal/scope/tier/acceptance/plan/source/dependencies/baseline/steps/proposal 改变控制摘要，撤销当前批准及相关证据、重置 todos，旧记录保留。选档后首次补齐当前缺失的步骤、方案或验证计划，可以沿用同一档位选择。纯展示措辞使用 note。方案批准绑定 proposal 的 JSON 语义内容。
 - `resume(...)`：同轮继续，只登记活动，不跳门禁、不推测阻塞。`return_task(...,reason,actor)`：人工退回新轮次，旧轮保留、新轮无证据。cancel 后只能人工退回，start/run/resume 均不能自动复活。
 - `cancel(...)`：取消并保持历史；running 期间拒绝取消，避免误报子进程已经停止。`recover(...)` 只恢复已死亡所有者的孤立 running，记 error attempt，不能把异常当成功。
@@ -167,6 +168,15 @@ CLI status/snapshot/history 在数据库不存在时直接返回 NOT_FOUND，不
 we sync-review-card --task MOD-R1 --version VERSION --request UNIQUE_ID \
   --round ROUND_ID --card-path 'docs/product/任务/我的模块.md' --card-id MOD-R1
 ```
+
+### 任务卡结案对账
+
+当团队协作使任务卡先于本机进入结案状态（状态为「评审通过，待人工验收」、「已验收」、「已完成」、「已交付」，或卡内完成框已勾选 `[x]`）时，引擎负责对账本地 v2 任务：
+
+- **自动关闭条件**：仅当本地任务仍未开工（`state == 'created'`、当前轮次无 `attempts` 且无已完成 `todo`）时，允许通过 `close_superseded` 自动关闭；已处于 `cancelled`、`running`、`review_passed` 或本机已回写过 `review_card` 的任务均跳过。
+- **匹配规则**：优先读取任务显式绑定的 `card`；未绑定时只在 `docs.cards_dir` 直接子级 `*.md` 中按唯一 `### <task_id>` 标题匹配，全目录恰好命中一处才生效，歧义不自动关闭。
+- **只读观测与落库触发**：`status` 只读计算并展示 `card_closure`（`action` 为 `auto_close` 或 `needs_decision`），绝不写库。实际对账落库在 `SessionStart` 钩子（含 Cursor `sessionStart`）、CLI `prepare`/`begin`/`resume` 执行前以及显式 `we reconcile-cards` 中触发。
+- **结果与冲突处理**：自动关闭后记为 `state='cancelled'`、`phase='done'`、当前轮次 `cancel.reason='card_superseded'` 及 `card_superseded` 证据（幂等重试安全）；若事后仍需在本机返工，使用 `return-task` 开启新轮次。若本地任务已开工（`needs_decision`），引擎保持原状态并在钩子/CLI 输出冲突提示，交由人工决定退回新轮次、拆新任务或放弃。
 
 ### 档位配置强制验证
 

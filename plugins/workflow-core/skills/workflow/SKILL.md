@@ -53,6 +53,8 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/workflow_engine_cli.py" --root "项目根
 - `begin`：人工定档（及完整档批准）落库后，一步核对就绪前置、按 `--max-bytes` 批量输出全部必读基线正文并登记 SHA-256 回执、`start` 开工并可选 `--tdd-json` 记录 TDD 决策；超限时仍报 `BASELINE_BATCH_LIMIT`，回退 `read-baseline --path` 分批；
 - 写操作（`prepare` / `begin` / `finish-step` / `run` / `review` 等）支持省略 `--request`（自动生成 UUID；显式重试/回写恢复仍传原 `--request`），响应内联 `progress` 投影，无需再单独调用 `progress --task`；末步 `finish-step` 支持 `--finish-implementation` 一步进入待验证。
 
+引擎会在会话启动及 `prepare`/`begin`/`resume` 等写入口自动对账任务卡：已被任务卡结案（如「评审通过，待人工验收 / 已验收 / 已完成 / 已交付」或勾选 `[x]`）但本机仍未开工的本地记录会被自动关闭为 `cancelled`（`card_superseded`），无需人工手动 `cancel`。若收到 `ENGINE_CARD_CONFLICT` 提示或 `status` 返回 `card_closure.action=needs_decision`（任务卡已结案但本地已开工），Agent 必须向用户如实说明差异并请用户决定是退回新轮次（`return-task`）、拆出新任务还是放弃本地任务，不得擅自 `cancel`，也不得将任务卡状态反向同步为本地通过证据。
+
 修改使用最新整数 `version`，绑定任务、当前轮次、尝试和证据；不编造通过命令、不手改数据库绕门禁。每轮明确主执行者，获授权的协作者继承同轮授权并以版本检查更新。脚本缺失、协议不兼容或宿主能力不足须报告，不能静默降级。宿主根据当前 session 的唯一轮次绑定查找任务，不要求在子 shell 中 export 后修改父进程环境。多任务冲突时显式指定任务并重新绑定；不得猜测当前任务。首次创建可用 `--plan-json` / `--details-json`，报告和修复输入可用 `--file-json`，无需实施前先写 JSON 文件。
 
 ### 在 Agent 窗口定档

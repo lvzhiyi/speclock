@@ -35,6 +35,7 @@ def parser():
     commands = result.add_subparsers(dest='action', required=True, parser_class=Parser)
     list_command = commands.add_parser('list')
     list_command.add_argument('--active', action='store_true', help='仅显示未终态的活动任务')
+    commands.add_parser('reconcile-cards', help='按任务卡结案状态自动关闭未开工本地任务')
     reads = ('status', 'snapshot', 'history', 'progress', 'render-md')
     actions = reads + ('prepare', 'begin', 'create', 'start', 'resume', 'run', 'complete', 'cancel', 'recover', 'confirm-plan', 'confirm-tier', 'request-confirmation', 'approve-proposal', 'read-baseline', 'register-baseline', 'record-tdd', 'finish-step', 'finish-implementation', 'review', 'sync-review-card', 'update-task', 'adopt-protocol', 'bind-executor', 'repair', 'refine-steps', 'return-task')
     for action in actions:
@@ -308,6 +309,7 @@ def main(argv=None):
         documents = None
         confirmation = None
         review_path = None
+        reconcile = None
         from workflow_engine.engine import Engine
         from workflow_engine.state_dir import migrate_legacy
         root = Path(args.root).resolve()
@@ -328,6 +330,16 @@ def main(argv=None):
             print(json.dumps({'ok': True, 'tasks': tasks}, ensure_ascii=False))
             return 0
         database = raw_database.resolve()
+        if args.action == 'reconcile-cards':
+            if raw_database.is_symlink():
+                from workflow_engine.model import EngineError
+                raise EngineError('DB_LOCATION', '数据库不允许符号链接')
+            if not database.is_file():
+                print(json.dumps({'ok': True, 'closed': [], 'conflicts': []}, ensure_ascii=False))
+                return 0
+            result = Engine(root, database).reconcile_cards()
+            print(json.dumps({'ok': True, **result}, ensure_ascii=False))
+            return 0
         if args.action == 'request-confirmation' and args.db and database != default_db(root).resolve():
             raise ArgumentError('聊天确认须与宿主使用同一默认状态库')
         if args.action in ('status', 'snapshot', 'history', 'progress', 'render-md', 'request-confirmation', 'begin') and not database.is_file():
@@ -383,8 +395,10 @@ def main(argv=None):
                 raise ArgumentError('details 必须为任务协议 v2 对象，不得为 null')
             value = engine.create(args.task, TIER_MAP[args.tier], args.acceptance, input_json(args, 'plan'), args.request, details=details)
         elif args.action == 'prepare':
+            reconcile = engine.reconcile_cards()
             value, confirmation = handle_prepare(args, engine, root, database)
         elif args.action == 'begin':
+            reconcile = engine.reconcile_cards()
             value, documents = handle_begin(args, engine)
         elif args.action == 'progress':
             from agent_progress import project_progress
@@ -395,6 +409,8 @@ def main(argv=None):
             from host_gate import request_chat_confirmation
             value = request_chat_confirmation(root, engine.status(args.task), args.version, args.session, args.kind, args.request)
         else:
+            if args.action == 'resume':
+                reconcile = engine.reconcile_cards()
             task = engine.status(args.task)
             if task.get('protocol_version') != 2 and args.action != 'adopt-protocol':
                 from workflow_engine.model import EngineError
@@ -448,6 +464,8 @@ def main(argv=None):
             output['confirmation'] = confirmation
         if review_path is not None:
             output['review_path'] = str(review_path)
+        if reconcile and (reconcile.get('closed') or reconcile.get('conflicts')):
+            output['reconcile'] = reconcile
         if key == 'task' and isinstance(value, dict) and value.get('protocol_version') == 2 and args.action not in ('status', 'snapshot'):
             from agent_progress import project_progress
             output['progress'] = project_progress(value)

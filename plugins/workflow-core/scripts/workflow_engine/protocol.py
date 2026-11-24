@@ -168,9 +168,30 @@ class ProtocolMixin:
             missing.append('snapshot')
         if not current(task).get('review_card') and task.get('card_sync') != 'pending':
             task['card_sync'] = 'awaiting_review' if task.get('card') else 'unbound'
+        if task['state'] in ('cancelled', 'running', 'review_passed'):
+            task.pop('card_closure', None)
         current(task).update(state=task['state'], phase=task['phase'])
         task['missing'] = missing
         return task
+
+    def _card_closure(self, task):
+        if task.get('protocol_version') != 2 or task.get('state') in ('cancelled', 'running', 'review_passed'):
+            return None
+        if not task.get('rounds') or current(task).get('review_card'):
+            return None
+        binding = task.get('card') or review_card.find_card(self.root, task['id'])
+        if not binding:
+            return None
+        try:
+            info = review_card.read_status(self.root, binding)
+        except (EngineError, OSError):
+            return None
+        if not info or (not info['checked'] and info['status'] not in review_card.CLOSED):
+            return None
+        fresh = (task['state'] == 'created' and not current(task)['attempts']
+                 and all(t['status'] != 'done' for t in current(task)['todos']))
+        return dict(binding=binding, status=info['status'], checked=info['checked'],
+                    action='auto_close' if fresh else 'needs_decision')
 
     def _refresh(self, db, task):
         # 只读投影；持久化失效只在下一次写操作中发生。
@@ -214,6 +235,11 @@ class ProtocolMixin:
                                  'synced' if snapshot == projection['projected'] else 'diverged')
         else:
             task['card_sync'] = 'awaiting_review' if task.get('card') else 'unbound'
+        closure = self._card_closure(task)
+        if closure:
+            task['card_closure'] = closure
+        else:
+            task.pop('card_closure', None)
         return self._view(task)
 
     def _refresh_baselines(self, task, projection):
@@ -576,6 +602,45 @@ class ProtocolMixin:
         def apply(task):
             task.update(state='cancelled', phase='done')
         return self._change('cancel', task_id, expected_version, request_id, None, apply)
+
+    def close_superseded(self, task_id, version, request):
+        def apply(task):
+            closure = task.get('card_closure')
+            require(closure and closure['action'] == 'auto_close', 'STATE_INVALID', '任务卡未结案或本地已开工，不能自动结案')
+            self._record(task, 'card_superseded', closure)
+            current(task)['cancel'] = dict(reason='card_superseded', card=closure['binding'], status=closure['status'])
+            task.update(state='cancelled', phase='done')
+        return self._change('card_superseded', task_id, version, request, None, apply)
+
+    def reconcile_cards(self):
+        with self.store.read() as db:
+            rows = db.execute('SELECT data FROM tasks').fetchall()
+        tasks = []
+        for (text,) in rows:
+            task = json.loads(text)
+            if task.get('root') == str(self.root) and task.get('protocol_version') == 2:
+                tasks.append(task)
+        tasks.sort(key=lambda item: str(item.get('id') or ''))
+        closed, conflicts = [], []
+        for raw in tasks:
+            closure = self._card_closure(raw)
+            if not closure:
+                continue
+            if closure['action'] == 'auto_close':
+                try:
+                    updated = self.close_superseded(
+                        raw['id'], raw['version'], f"card-superseded:{raw['id']}:{raw['version']}")
+                except EngineError as error:
+                    conflicts.append(dict(id=raw['id'], state=raw['state'], status=closure['status'],
+                                          checked=closure['checked'], card=closure['binding'], error=error.code))
+                else:
+                    if updated.get('state') == 'cancelled':
+                        closed.append(dict(id=raw['id'], status=closure['status'],
+                                           checked=closure['checked'], card=closure['binding']))
+            else:
+                conflicts.append(dict(id=raw['id'], state=raw['state'], status=closure['status'],
+                                      checked=closure['checked'], card=closure['binding']))
+        return dict(closed=closed, conflicts=conflicts)
 
     def complete(self, task_id, expected_version, request_id):
         if self.status(task_id).get('protocol_version') != 2:

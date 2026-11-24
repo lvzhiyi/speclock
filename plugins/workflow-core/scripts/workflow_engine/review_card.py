@@ -16,6 +16,7 @@ from .snapshot import capture, capture_files, fingerprint, sensitive
 
 
 STATUS = '评审通过，待人工验收'
+CLOSED = {'评审通过，待人工验收', '已验收', '已完成', '已交付'}
 MAX_BYTES = 1048576
 HEADING = re.compile(r'^ {0,3}(#{1,3})(?:[ \t]+(\S+)|[ \t]*$)')
 FENCE = re.compile(r'^ {0,3}(`{3,}|~{3,})(.*)$')
@@ -43,7 +44,7 @@ def validate_binding(root, binding):
     return path
 
 
-def replace_status(data, card_id):
+def _scan(data, card_id):
     try:
         lines = data.decode('utf-8').splitlines(keepends=True)
     except UnicodeDecodeError as error:
@@ -81,6 +82,11 @@ def replace_status(data, card_id):
         field = FIELD.match(body) if selected else None
         if field:
             fields.append((index, field.start(1), field.end(1)))
+    return lines, sections, fields, checked
+
+
+def replace_status(data, card_id):
+    lines, sections, fields, checked = _scan(data, card_id)
     if sections != 1 or len(fields) != 1:
         raise EngineError('CARD_INVALID', '须唯一定位任务卡标题和独立的协作状态字段')
     if checked:
@@ -88,6 +94,57 @@ def replace_status(data, card_id):
     index, start, end = fields[0]
     lines[index] = lines[index][:start] + STATUS + lines[index][end:]
     return ''.join(lines).encode('utf-8')
+
+
+def read_status(root, binding):
+    """只读解析绑定任务卡的当前状态与勾选框；定位不唯一返回 None。"""
+    path = validate_binding(root, binding)
+    with open_parent(root, path) as directory:
+        data, _ = read_card(directory, path.name)
+    lines, sections, fields, checked = _scan(data, binding['id'])
+    if sections != 1 or len(fields) != 1:
+        return None
+    index, start, end = fields[0]
+    return {'status': lines[index][start:end].strip(), 'checked': checked}
+
+
+def find_card(root, card_id):
+    """在配置任务卡目录直接子级中按 ### <id> 唯一匹配未绑定任务卡。"""
+    if not isinstance(card_id, str) or not re.fullmatch(r'[^\s#]+', card_id):
+        return None
+    root_path = Path(root).resolve()
+    try:
+        config = load(root_path)
+        rel_dir = Path(safe_path(root_path, config.get('docs.cards_dir') or DOC_DEFAULTS['cards_dir']))
+    except (OSError, ConfigError, ValueError, EngineError):
+        return None
+    cards_dir = root_path / rel_dir
+    if cards_dir.is_symlink() or not cards_dir.is_dir():
+        return None
+    try:
+        entries = sorted(cards_dir.iterdir(), key=lambda p: p.name)
+    except OSError:
+        return None
+    matches = []
+    for entry in entries:
+        if entry.suffix != '.md' or entry.is_symlink() or not entry.is_file():
+            continue
+        rel_file = rel_dir / entry.name
+        if sensitive(rel_file):
+            continue
+        try:
+            with open_parent(root_path, rel_file) as directory:
+                data, _ = read_card(directory, entry.name)
+            _, sections, _, _ = _scan(data, card_id)
+        except (OSError, EngineError):
+            continue
+        if sections > 1:
+            return None
+        if sections == 1:
+            matches.append(rel_file.as_posix())
+            if len(matches) > 1:
+                return None
+    return {'path': matches[0], 'id': card_id} if len(matches) == 1 else None
 
 
 def sha256(data):
