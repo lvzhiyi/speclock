@@ -101,10 +101,23 @@ class CardReconcileTests(unittest.TestCase):
         self.assertEqual(self.engine.status('t')['state'], 'created')
 
     def test_implementing_task_with_closed_card_reports_conflict_without_closing(self):
+        # 1) 刚进入 implementing（0 步完成）或任务卡已是已交付/已验收/[x] 时，自动关闭
         self.card.write_text(render_card(status='待处理'), encoding='utf-8')
         task = self.fixture.ready()
         self.assertEqual(task['state'], 'implementing')
         self.card.write_text(render_card(status='已交付'), encoding='utf-8')
+        self.assertEqual(self.engine.status('t')['card_closure']['action'], 'auto_close')
+        closed_result = self.engine.reconcile_cards()
+        self.assertEqual([item['id'] for item in closed_result['closed']], ['t'])
+        self.assertEqual(closed_result['conflicts'], [])
+        self.assertEqual(self.engine.status('t')['state'], 'cancelled')
+
+        # 2) 本地已完成实施步骤且任务卡仍为「评审通过，待人工验收」（未勾选）时，报告冲突交由人工决定
+        self.setUp()
+        self.card.write_text(render_card(status='待处理'), encoding='utf-8')
+        task = self.fixture.implemented()
+        self.assertEqual(task['state'], 'pending_verification')
+        self.card.write_text(render_card(status='评审通过，待人工验收'), encoding='utf-8')
 
         status = self.engine.status('t')
         self.assertEqual(status['card_closure']['action'], 'needs_decision')
@@ -112,8 +125,8 @@ class CardReconcileTests(unittest.TestCase):
         self.assertEqual(result['closed'], [])
         self.assertEqual(len(result['conflicts']), 1)
         self.assertEqual(result['conflicts'][0]['id'], 't')
-        self.assertEqual(result['conflicts'][0]['state'], 'implementing')
-        self.assertEqual(self.engine.status('t')['state'], 'implementing')
+        self.assertEqual(result['conflicts'][0]['state'], 'pending_verification')
+        self.assertEqual(self.engine.status('t')['state'], 'pending_verification')
 
     def test_pending_card_has_no_closure_and_empty_reconcile(self):
         self.card.write_text(render_card(status='待处理'), encoding='utf-8')
@@ -223,12 +236,12 @@ class CardReconcileTests(unittest.TestCase):
         # 已开工冲突场景提示人工决定。
         self.setUp()
         self.card.write_text(render_card(status='待处理'), encoding='utf-8')
-        self.fixture.ready()
-        self.card.write_text(render_card(status='', checked=True), encoding='utf-8')
+        self.fixture.implemented()
+        self.card.write_text(render_card(status='评审通过，待人工验收'), encoding='utf-8')
         conflict_msg = host_gate.card_reconcile_message(self.root, self.engine.db)
         self.assertIsNotNone(conflict_msg)
         self.assertIn('ENGINE_CARD_CONFLICT', conflict_msg)
-        self.assertIn('t（本地 implementing，任务卡 已勾选完成）', conflict_msg)
+        self.assertIn('t（本地 pending_verification，任务卡 评审通过，待人工验收）', conflict_msg)
 
 
 if __name__ == '__main__':

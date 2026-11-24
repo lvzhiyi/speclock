@@ -38,7 +38,7 @@ STATES = {"已完成": "completed", "自测完成": "completed", "人工验收�
           "已取消": "cancelled", "通过": "passed", "失败": "failed"}
 KNOWN_STATES = {"unknown", "created", "ready", "running", "passed", "completed", "failed",
                 "stale", "cancelled", "pending", "in_progress", "blocked", "review_passed"}
-CARD = re.compile(r"^###\s+([A-Za-z0-9_]*[A-Za-z][A-Za-z0-9_-]*-[A-Za-z]*[0-9]+[A-Za-z0-9_]*|[A-Za-z0-9][A-Za-z0-9_-]*-R[0-9]+)(?:\s+|[:：]\s*)(.+?)\s*$")
+CARD = re.compile(r"^#{3,4}\s+([A-Za-z0-9_]*[A-Za-z][A-Za-z0-9_-]*-[A-Za-z]*[0-9]+[A-Za-z0-9_]*|[A-Za-z0-9][A-Za-z0-9_-]*-R[0-9]+)(?:\s+|[:：]\s*)(.+?)\s*$")
 FIELD = re.compile(r"^\s*-\s+(?:\*\*)?(状态|协作状态)(?:\*\*)?[:：]\s*(.+?)\s*$")
 
 
@@ -170,12 +170,12 @@ def _parse(text, path, result, stage_map, task_map):
         if line.startswith("#"):
             current = None
         field = FIELD.match(line)
-        human_delivery = re.match(r"^- \[([ xX])\] 子需求人工验收/交付完成(?:（.*）)?$", line)
+        human_delivery = re.match(r"^- \[([ xX])\] 子(?:需求|任务)人工验收/交付完成(?:（.*）)?$", line)
         # 人工验收独立于 Agent 主状态，未勾选不能撤销评审通过。
         if current is not None and human_delivery:
             current["human_delivery_completed"] = human_delivery.group(1).lower() == "x"
             current["human_delivery_source"] = source
-        checked = re.match(r"^- \[([ xX])\] 子需求完成(?:（.*）)?$", line)
+        checked = re.match(r"^- \[([ xX])\] 子(?:需求|任务)完成(?:（.*）)?$", line)
         if current is not None and field:
             _evidence(current, _state(field.group(2)), source, result["issues"])
         if current is not None and checked:
@@ -346,11 +346,16 @@ def _engine(root, task_id, result, task_map, stage_map):
             if eng_state == "cancelled":
                 if previous is not None or task_id is None:
                     continue
-            if (previous is not None and previous.get("state") in {"review_passed", "completed", "ready"}
-                    and eng_state == "created"
-                    and not cur_round.get("attempts")
-                    and not any(isinstance(t, dict) and t.get("status") == "done" for t in (cur_round.get("todos") or []))):
-                continue
+            if previous is not None:
+                prev_state = previous.get("state")
+                no_progress = (
+                    not cur_round.get("attempts")
+                    and not any(isinstance(t, dict) and t.get("status") == "done" for t in (cur_round.get("todos") or []))
+                )
+                if prev_state == "completed":
+                    continue
+                if prev_state in {"review_passed", "ready"} and eng_state in {"created", "implementing"} and no_progress:
+                    continue
             task_map[identity] = project_task(task, previous or {})
             hb = _session_heartbeat(path.parent, task_map[identity].get("session_id"))
             if hb is not None:

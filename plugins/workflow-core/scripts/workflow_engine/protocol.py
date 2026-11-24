@@ -188,10 +188,11 @@ class ProtocolMixin:
             return None
         if not info or (not info['checked'] and info['status'] not in review_card.CLOSED):
             return None
-        fresh = (task['state'] == 'created' and not current(task)['attempts']
-                 and all(t['status'] != 'done' for t in current(task)['todos']))
+        human_settled = bool(info['checked'] or info['status'] in {'已验收', '已完成', '已交付'})
+        no_progress = (task['state'] in ('created', 'implementing') and not current(task)['attempts']
+                       and all(t['status'] != 'done' for t in current(task)['todos']))
         return dict(binding=binding, status=info['status'], checked=info['checked'],
-                    action='auto_close' if fresh else 'needs_decision')
+                    action='auto_close' if (human_settled or no_progress) else 'needs_decision')
 
     def _refresh(self, db, task):
         # 只读投影；持久化失效只在下一次写操作中发生。

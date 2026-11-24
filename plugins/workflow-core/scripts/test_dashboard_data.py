@@ -246,7 +246,7 @@ class DashboardDataTest(unittest.TestCase):
 
     def test_engine_overrides_document_state_without_conflict(self):
         self.config(True, "docs:\n  cards_dir: cards\n")
-        self.write("cards/a.md", "### A-R1 标题\n- 状态：已完成\n")
+        self.write("cards/a.md", "### A-R1 标题\n- 状态：进行中\n")
         self.database([{"id": "A-R1", "protocol_version": 2, "root": str(self.root),
             "current_round": "r", "rounds": [{"id": "r", "state": "failed", "phase": "verification"}]}])
         self.assertEqual(self.build()["tasks"][0]["state"], "failed")
@@ -317,6 +317,27 @@ class DashboardDataTest(unittest.TestCase):
         self.assertEqual(len(data_draft["tasks"]), 1)
         self.assertEqual(data_draft["tasks"][0]["id"], "BASE-UI07")
         self.assertEqual(data_draft["tasks"][0]["state"], "review_passed")
+
+        # 3) 四级子任务（#### AUTH-R07-T1）已验收时，即使本地停在 implementing (0/6) 也不得覆盖任务卡
+        self.write(
+            "docs/product/任务/全局组件.md",
+            "### AUTH-R07 父任务\n"
+            "- 协作状态：进行中\n"
+            "#### AUTH-R07-T1 微信 SDK 接入与授权凭证获取（R07 子任务）\n"
+            "- [x] 子任务完成（2026-11-24 用户确认验收）\n"
+            "- 协作状态：已验收\n",
+        )
+        self.db.unlink()
+        self.database([
+            {"id": "AUTH-R07-T1", "protocol_version": 2, "root": str(self.root), "current_round": "r1",
+             "rounds": [{"id": "r1", "state": "implementing", "phase": "implementation",
+                         "todos": [{"id": f"s{i}", "status": "pending", "title": f"步骤{i}"} for i in range(6)],
+                         "attempts": []}]},
+        ])
+        data_sub = self.build()
+        by_id_sub = {item["id"]: item for item in data_sub["tasks"]}
+        self.assertEqual(by_id_sub["AUTH-R07-T1"]["state"], "completed")
+        self.assertIn("全局组件.md:", by_id_sub["AUTH-R07-T1"]["source"])
 
 
 if __name__ == "__main__":
