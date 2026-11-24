@@ -602,7 +602,10 @@ function taskHighlight(item) {
     if (planned) return {label:lang === 'en' ? 'Next' : '下一步',message:(lang === 'en' ? 'Run verification: ' : '执行验证：') + planned + (reports.length ? '' : (lang === 'en' ? ' (no attempt yet)' : '（未记录验证尝试）')),group:'verification'};
     if (!reports.length) return {label:lang === 'en' ? 'Unverified' : '验证未记录',message:lang === 'en' ? 'No verification attempt yet' : '尚无验证尝试',group:'verification'};
   }
+  if (item.state === 'review_passed' && !item.protocol_version) return {label:lang === 'en' ? 'Git Card' : 'Git 任务卡',message:lang === 'en' ? 'Review passed — pending human acceptance (from Git card)' : '评审通过，待人工验收（来自 Git 任务卡）',tone:'good'};
+  if (item.state === 'completed' && !item.protocol_version) return {label:lang === 'en' ? 'Git Card' : 'Git 任务卡',message:lang === 'en' ? 'Accepted / completed (from Git card)' : '已验收 / 已完成（来自 Git 任务卡）',tone:'good'};
   if (item.state === 'review_passed') return {label:lang === 'en' ? 'Done (Agent)' : 'Agent 终态',message:lang === 'en' ? 'Verified & dual-axis review passed — ready for human acceptance' : item.summary,tone:'good'};
+  if (item.state === 'cancelled') return {label:lang === 'en' ? 'Cancelled' : '已取消',message:item.summary || (lang === 'en' ? 'Current round cancelled' : '本轮已取消')};
   const handoff = d.handoff;
   const next = businessLines(handoff?.next_step || handoff?.next_steps || handoff?.next || (typeof handoff === 'string' ? handoff : null))[0];
   return next ? {label:lang === 'en' ? 'Next' : '下一步',message:next} : {message:item.summary || (lang === 'en' ? 'No progress notes yet' : '暂无当前进展记录')};
@@ -619,13 +622,16 @@ function renderTasks(values) {
     const titleWrap = element('h3');
     titleWrap.append(element('span', text(item.id), 'card-id'), element('span', text(item.title)));
     head.append(titleWrap,badge(item.state));
+    const hasEngine = item.protocol_version === 2 || String(item.source || '').startsWith('engine:');
     const progress = item.progress || {};
     const tierMap = lang === 'en' ? {light:'Light Tier',standard:'Standard Tier',full:'Full Tier'} : {light:'轻量档',standard:'标准档',full:'完整档'};
     const tier = tierMap[item.tier] || (lang === 'en' ? 'Unknown Tier' : '档位未知');
-    const meta = [tier,phaseLabels[item.phase] ? (lang === 'en' ? phaseName(item.phase) + ' Phase' : phaseLabels[item.phase] + '阶段') : (lang === 'en' ? 'Unknown Phase' : '阶段未知')];
-    if (Number.isInteger(progress.done) && progress.total > 0) meta.push((lang === 'en' ? 'Steps ' : '实施 ') + progress.done + '/' + progress.total);
+    const meta = hasEngine
+      ? [tier,phaseLabels[item.phase] ? (lang === 'en' ? phaseName(item.phase) + ' Phase' : phaseLabels[item.phase] + '阶段') : (lang === 'en' ? 'Unknown Phase' : '阶段未知')]
+      : [lang === 'en' ? 'Git Task Card' : 'Git 任务卡', item.source].filter(Boolean);
+    if (hasEngine && Number.isInteger(progress.done) && progress.total > 0) meta.push((lang === 'en' ? 'Steps ' : '实施 ') + progress.done + '/' + progress.total);
     const phaseTrack = renderPhaseTrack(item);
-    const gateStrip = renderGateStrip(item);
+    const gateStrip = hasEngine ? renderGateStrip(item) : null;
     const highlight = taskHighlight(item);
     const focus = element('p',undefined,'task-focus');
     if (highlight.remaining !== undefined) focus.dataset.tone = 'attention';
@@ -648,7 +654,8 @@ function renderTasks(values) {
     });
     const children = [head,element('p',meta.join(' · '),'muted')];
     if (phaseTrack) children.push(phaseTrack);
-    children.push(gateStrip,focus,details);
+    if (gateStrip) children.push(gateStrip);
+    children.push(focus,details);
     node.append(...children);
     return node;
   }) : [element('p',taskValues.length ? (lang === 'en' ? 'No matching tasks. Try clearing filters.' : '没有匹配任务，试试清空筛选或调整状态和档位；不代表任务已完成。') : (lang === 'en' ? 'No tasks registered yet.' : '暂无任务记录；等待任务登记，不代表已完成。'),'empty')]));
@@ -774,7 +781,7 @@ function populateStateOptions() {
   const allOpt = element('option', lang === 'en' ? 'All States' : '全部状态');
   allOpt.value = 'all';
   const opts = [allOpt];
-  for (const state of ['created','implementing','pending_verification','running','passed','failed','stale','review_failed','review_passed','cancelled','unknown','pending','in_progress','blocked','completed']) {
+  for (const state of ['created','implementing','pending_verification','running','passed','failed','stale','review_failed','review_passed','unknown','pending','in_progress','blocked','completed']) {
     const option = element('option',stateLabel(state));option.value = state;opts.push(option);
   }
   select.replaceChildren(...opts);

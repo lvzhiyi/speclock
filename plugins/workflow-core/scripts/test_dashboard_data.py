@@ -281,6 +281,43 @@ class DashboardDataTest(unittest.TestCase):
         self.write("ai-workflow.yaml", "x" * (self.api.MAX_CONFIG_BYTES + 1))
         self.assertTrue(self.build()["issues"])
 
+    def test_non_r_card_id_and_git_card_priority_over_cancelled_or_stale_draft(self):
+        self.config(True, "docs:\n  cards_dir: docs/product/任务\n")
+        self.write(
+            "docs/product/任务/全局组件.md",
+            "### BASE-UI07 用 easy_refresh 统一列表刷新加载\n"
+            "- 协作状态：评审通过，待人工验收\n"
+            "### 2026-11-24 日期小节\n"
+            "- 协作状态：待处理\n",
+        )
+        # 1) 本地为 cancelled，无卡临时已取消任务也会被隐藏，Git 任务卡保留原状态
+        self.database([
+            {"id": "BASE-UI07", "protocol_version": 2, "root": str(self.root), "current_round": "r1",
+             "rounds": [{"id": "r1", "state": "cancelled", "phase": "done", "todos": [], "attempts": []}]},
+            {"id": "login-button-format-20261119", "protocol_version": 2, "root": str(self.root), "current_round": "r1",
+             "rounds": [{"id": "r1", "state": "cancelled", "phase": "done", "todos": [], "attempts": []}]},
+            {"id": "hotfix-active", "protocol_version": 2, "root": str(self.root), "current_round": "r1",
+             "rounds": [{"id": "r1", "state": "implementing", "phase": "implementation", "todos": [], "attempts": []}]},
+        ])
+        data = self.build()
+        by_id = {item["id"]: item for item in data["tasks"]}
+        self.assertEqual(set(by_id), {"BASE-UI07", "hotfix-active"})
+        self.assertEqual(by_id["BASE-UI07"]["state"], "review_passed")
+        self.assertIn("全局组件.md:", by_id["BASE-UI07"]["source"])
+        self.assertEqual(by_id["hotfix-active"]["state"], "implementing")
+
+        # 2) 本地未开工旧草稿（created）同样不覆盖已过审/结案的 Git 任务卡
+        self.db.unlink()
+        self.database([
+            {"id": "BASE-UI07", "protocol_version": 2, "root": str(self.root), "current_round": "r1",
+             "rounds": [{"id": "r1", "state": "created", "phase": "planning",
+                         "todos": [{"id": "s1", "status": "pending", "title": "步骤1"}], "attempts": []}]},
+        ])
+        data_draft = self.build()
+        self.assertEqual(len(data_draft["tasks"]), 1)
+        self.assertEqual(data_draft["tasks"][0]["id"], "BASE-UI07")
+        self.assertEqual(data_draft["tasks"][0]["state"], "review_passed")
+
 
 if __name__ == "__main__":
     unittest.main()

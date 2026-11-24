@@ -123,6 +123,49 @@ class PresentationTests(unittest.TestCase):
         result = subprocess.run(["node", "-e", script], capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_empty_review_not_invalidated_and_git_card_renders_cleanly(self):
+        created = project_task(
+            dict(
+                id="T-CREATED", protocol_version=2, current_round="r",
+                rounds=[dict(id="r", state="created", phase="planning", control_digest="abc", todos=[], attempts=[], evidence=[])],
+            ),
+            {},
+        )
+        self.assertEqual(created["business"]["review"][0]["conclusion"], "unknown")
+
+        cancelled = self.task(state="cancelled", phase="done")
+        self.assertEqual(cancelled["state"], "cancelled")
+        self.assertEqual(cancelled["readiness"]["blocking"], [])
+
+        if shutil.which("node"):
+            script = page_html().split("<script>")[1].split("</script>")[0].split("byId('refresh').addEventListener")[0]
+            stub = r'''class Node {
+              constructor(tag) { this.tag=tag;this.children=[];this.style={};this.dataset={};this.open=false;this.value='';this.content='';this.events={};this.isConnected=true; }
+              set textContent(v) { this.content=String(v);this.children=[]; }
+              get textContent() { return this.content+this.children.map(n=>n.textContent).join(' '); }
+              append(...nodes) { this.children.push(...nodes); }
+              replaceChildren(...nodes) { this.content='';this.children=nodes; }
+              addEventListener(name, handler) { this.events[name]=handler; }
+            }
+            const nodes={}; const document={createElement:tag=>new Node(tag),getElementById:id=>nodes[id]||(nodes[id]=new Node('div'))};
+            '''
+            git_card = {"id": "BASE-UI07", "title": "用 easy_refresh 统一列表刷新加载", "state": "review_passed", "source": "docs/product/任务/全局组件.md:3"}
+            checks = r'''
+            populateStateOptions();
+            const optionValues = nodes['state-filter'].children.map(o => o.value);
+            if (optionValues.includes('cancelled') || optionValues.includes('superseded')) throw Error('状态筛选不应包含已取消或已结案');
+            nodes['state-filter'].value='all';
+            nodes['tier-filter']=new Node('select');
+            nodes['tier-filter'].value='all';
+            renderTasks([gitCard]);
+            const rendered = nodes.tasks.children[0].textContent;
+            if (!rendered.includes('Git 任务卡') || rendered.includes('档位未知') || rendered.includes('阶段未知')) throw Error('纯 Git 任务卡渲染不符合预期：' + rendered);
+            if (taskHighlight(gitCard).label !== 'Git 任务卡') throw Error('纯 Git 任务卡焦点标签错误');
+            '''
+            payload = f"\nconst gitCard={json.dumps(git_card, ensure_ascii=False)};\n"
+            result = subprocess.run(["node", "-e", stub + script + payload + checks], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()

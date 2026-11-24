@@ -26,16 +26,16 @@ MAX_ENGINE_JSON_BYTES = 1024 * 1024
 STAGES = (("prd", "需求接收"), ("breakdown", "需求拆解"), ("kickoff", "开工准备"),
           ("proposal", "方案提案"), ("implementation", "实施"),
           ("verification", "验证"), ("review", "评审"), ("delivery", "交付"))
-STATES = {"已完成": "completed", "自测完成": "completed", "人工验收通过": "completed", "已交付": "completed",
+STATES = {"已完成": "completed", "自测完成": "completed", "人工验收通过": "completed", "已验收": "completed", "已交付": "completed",
           "进行中": "in_progress", "实施中": "in_progress", "研发中": "in_progress",
           "待处理": "pending", "待开始": "pending", "未开始": "pending", "待开发": "pending", "待联调": "pending",
           "受阻": "blocked", "待确认": "blocked", "可评审": "ready",
-          "评审通过": "ready", "评审通过，待人工验收": "ready", "待人工验收": "ready",
+          "评审通过": "review_passed", "评审通过，待人工验收": "review_passed", "待人工验收": "review_passed",
           "实施完成待验证": "pending", "待验证": "pending",
           "已取消": "cancelled", "通过": "passed", "失败": "failed"}
 KNOWN_STATES = {"unknown", "created", "ready", "running", "passed", "completed", "failed",
-                "stale", "cancelled", "pending", "in_progress", "blocked"}
-CARD = re.compile(r"^###\s+([A-Za-z0-9][A-Za-z0-9_-]*-R[0-9]+)\s+(.+?)\s*$")
+                "stale", "cancelled", "pending", "in_progress", "blocked", "review_passed"}
+CARD = re.compile(r"^###\s+([A-Za-z0-9_]*[A-Za-z][A-Za-z0-9_-]*-[A-Za-z]*[0-9]+[A-Za-z0-9_]*|[A-Za-z0-9][A-Za-z0-9_-]*-R[0-9]+)(?:\s+|[:：]\s*)(.+?)\s*$")
 FIELD = re.compile(r"^\s*-\s+(?:\*\*)?(状态|协作状态)(?:\*\*)?[:：]\s*(.+?)\s*$")
 
 
@@ -113,7 +113,7 @@ def _project_root(root):
 
 
 def _state(raw):
-    raw = raw.strip().strip("*` ")
+    raw = re.split(r"<!--|[;；]", raw, maxsplit=1)[0].strip().strip("*` ")
     return STATES.get(raw, raw if raw in KNOWN_STATES else "unknown")
 
 
@@ -251,6 +251,17 @@ def _documents(root, config, issues):
     return sorted(paths)[:MAX_DOCUMENTS]
 
 
+def _engine_round_state(task):
+    if task.get("protocol_version") == 2:
+        rounds = task.get("rounds")
+        rounds = rounds if isinstance(rounds, list) else []
+        current_id = task.get("current_round")
+        matches = [r for r in rounds if isinstance(r, dict) and r.get("id") == current_id]
+        cur = matches[0] if len(matches) == 1 and current_id else {}
+        return cur.get("state"), cur
+    return task.get("state"), {}
+
+
 def _engine(root, task_id, result, task_map, stage_map):
     mode = result["mode"]
     # 旧 engine.enabled 仅用于迁移提示，不参与只读数据源选择。
@@ -303,12 +314,24 @@ def _engine(root, task_id, result, task_map, stage_map):
                 continue
             if mode["binding"] != "mismatch":
                 mode.update(binding="bound", state="active")
-            previous = task_map.get(identity, {})
-            task_map[identity] = project_task(task, previous)
+            previous = task_map.get(identity)
+            eng_state, cur_round = _engine_round_state(task)
+            if eng_state == "cancelled":
+                if previous is not None or task_id is None:
+                    continue
+            if (previous is not None and previous.get("state") in {"review_passed", "completed", "ready"}
+                    and eng_state == "created"
+                    and not cur_round.get("attempts")
+                    and not any(isinstance(t, dict) and t.get("status") == "done" for t in (cur_round.get("todos") or []))):
+                continue
+            task_map[identity] = project_task(task, previous or {})
+            if previous and previous.get("source"):
+                task_map[identity]["card_source"] = previous["source"]
             # 文档人工验收是独立来源，不覆盖轮次权威状态或引擎交付记录。
-            for key in ("human_delivery_completed", "human_delivery_source"):
-                if key in previous:
-                    task_map[identity][key] = previous[key]
+            if previous:
+                for key in ("human_delivery_completed", "human_delivery_source"):
+                    if key in previous:
+                        task_map[identity][key] = previous[key]
     except (OSError, ValueError, sqlite3.Error, TypeError, AttributeError, RecursionError):
         mode.update(state="unavailable", warning="引擎数据库或任务数据不可用")
         result["issues"].append("引擎数据库无法只读解析")
