@@ -39,6 +39,7 @@ CHAT_REPLY_WRAPPERS = (
 )
 CHAT_STRIP_CHARS = " \t\r\n\u3000\u200b\ufeff"
 HOOK_SESSION_PREFIX = "hook-session-"
+HOOK_HEARTBEAT_INTERVAL = 15.0
 CONFIRM_HELP = ("ENGINE_CONFIRMATION_UNSUPPORTED：当前宿主回调没有匹配的用户确认。"
                 "请用 request-confirmation 准备聊天确认，并在 Agent 窗口展示回复选项。"
                 "确认绑定当前任务、轮次、版本及控制摘要。")
@@ -335,7 +336,7 @@ def read_hook_activity(root, session):
 
 
 def record_hook_activity(root, event):
-    """最佳努力记录当前会话已触发的宿主钩子事件，绝不阻断门禁主路径。"""
+    """最佳努力记录当前会话已触发的宿主钩子事件与节流心跳，绝不阻断门禁主路径。"""
     try:
         if not isinstance(event, dict):
             return
@@ -346,11 +347,18 @@ def record_hook_activity(root, event):
         if not isinstance(event_name, str) or not event_name.strip():
             return
         host = os.environ.get("WORKFLOW_HOST") or "claude"
+        raw_tool = event.get("tool_name")
+        tool_name = raw_tool.strip()[:64] if isinstance(raw_tool, str) and raw_tool.strip() else ""
+        now = time.time()
         path = hook_activity_path(root, session)
         existing = read_hook_activity(root, session) or {}
         raw_events = existing.get("events") if isinstance(existing.get("events"), list) else []
         events = [item for item in raw_events if isinstance(item, str) and item]
-        if existing.get("host") == host and event_name in events:
+        raw_prev_updated = existing.get("updated_at")
+        prev_updated = float(raw_prev_updated) if isinstance(raw_prev_updated, (int, float)) else 0.0
+        prev_event = existing.get("last_event") if isinstance(existing.get("last_event"), str) else ""
+        stop_transition = (event_name == "Stop") != (prev_event == "Stop")
+        if existing.get("host") == host and event_name in events and not stop_transition and (now - prev_updated) < HOOK_HEARTBEAT_INTERVAL:
             return
         if event_name not in events:
             events.append(event_name)
@@ -358,7 +366,9 @@ def record_hook_activity(root, event):
             "session_id": session,
             "host": host,
             "events": events,
-            "updated_at": round(time.time(), 3),
+            "last_event": event_name,
+            "last_tool": tool_name,
+            "updated_at": round(now, 3),
         }
         save_pending(path, payload, root=root)
     except Exception:

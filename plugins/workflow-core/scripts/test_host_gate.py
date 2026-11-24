@@ -462,3 +462,38 @@ class HostGateTests(unittest.TestCase):
             approved = dict(event, tool_response={"answers": {question_text: "批准方案"}})
             self.assertIn("RECORDED", host_gate.post_tool(approved))
             engine.return_value.approve_proposal.assert_called_once()
+
+    def test_hook_activity_heartbeat_throttle_and_stop_transition(self):
+        with tempfile.TemporaryDirectory() as home:
+            env = {k: v for k, v in os.environ.items() if k not in {"WORKFLOW_HOST", "CODEX_THREAD_ID", "CURSOR_PROJECT_DIR", "CURSOR_PLUGIN_ROOT"}}
+            env["WORKFLOW_ENGINE_HOME"] = home
+            env["WORKFLOW_HOST"] = "claude"
+            with patch.dict(os.environ, env, clear=True):
+                with patch("host_gate.time.time", return_value=1000.0):
+                    host_gate.record_hook_activity(self.root, {"session_id": "s1", "hook_event_name": "PreToolUse", "tool_name": "Edit"})
+                data = host_gate.read_hook_activity(self.root, "s1")
+                self.assertEqual(data["last_event"], "PreToolUse")
+                self.assertEqual(data["last_tool"], "Edit")
+                self.assertEqual(data["updated_at"], 1000.0)
+
+                with patch("host_gate.time.time", return_value=1005.0), patch.object(host_gate, "save_pending", side_effect=AssertionError("15秒内重复事件应节流")):
+                    host_gate.record_hook_activity(self.root, {"session_id": "s1", "hook_event_name": "PreToolUse", "tool_name": "Edit"})
+
+                with patch("host_gate.time.time", return_value=1020.0):
+                    host_gate.record_hook_activity(self.root, {"session_id": "s1", "hook_event_name": "PreToolUse", "tool_name": "Bash"})
+                data = host_gate.read_hook_activity(self.root, "s1")
+                self.assertEqual(data["updated_at"], 1020.0)
+                self.assertEqual(data["last_tool"], "Bash")
+
+                with patch("host_gate.time.time", return_value=1022.0):
+                    host_gate.record_hook_activity(self.root, {"session_id": "s1", "hook_event_name": "Stop"})
+                data = host_gate.read_hook_activity(self.root, "s1")
+                self.assertEqual(data["last_event"], "Stop")
+                self.assertEqual(data["updated_at"], 1022.0)
+
+                with patch("host_gate.time.time", return_value=1024.0):
+                    host_gate.record_hook_activity(self.root, {"session_id": "s1", "hook_event_name": "PreToolUse", "tool_name": "Read"})
+                data = host_gate.read_hook_activity(self.root, "s1")
+                self.assertEqual(data["last_event"], "PreToolUse")
+                self.assertEqual(data["last_tool"], "Read")
+                self.assertEqual(data["updated_at"], 1024.0)

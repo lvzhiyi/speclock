@@ -3,6 +3,7 @@ import copy
 import os
 from pathlib import Path
 import threading
+import time
 import uuid
 from .model import EngineError, canonical, digest
 from .policy import TIERS, missing, validate_plan
@@ -177,7 +178,7 @@ class LegacyEngine:
                 if task.get("protocol_version") == 2:
                     self._attempt(task, "verification", "running", {"operation": token})
                     current(task).update(state="running", phase="verification")
-                    task["activity"] = {"action": "run_started", "operation": token, "round_id": task["current_round"]}
+                    task["activity"] = {"action": "run_started", "at": time.time(), "operation": token, "round_id": task["current_round"]}
                 self._view(task)
                 self.store.save(db, task, "run_started", request_id, payload)
             # 运行期间不持有 SQLite 锁；幂等重放返回已登记的 running 响应。
@@ -211,7 +212,7 @@ class LegacyEngine:
                     if failure:
                         latest["failure"] = failure
                     current(latest).update(state=state, phase="verification")
-                    latest["activity"] = {"action": "run_finished", "round_id": latest["current_round"], "state": state}
+                    latest["activity"] = {"action": "run_finished", "at": time.time(), "round_id": latest["current_round"], "state": state}
                 self._view(latest)
                 self.store.save(db, latest, "run_finished")
                 db.execute("UPDATE requests SET response=? WHERE key=?", (canonical(latest), request_id))

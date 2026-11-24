@@ -166,6 +166,153 @@ class PresentationTests(unittest.TestCase):
             result = subprocess.run(["node", "-e", stub + script + payload + checks], capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr)
 
+    @unittest.skipUnless(shutil.which("node"), "Node 不可用")
+    def test_pipeline_spotlight_and_cyber_bot_states(self):
+        html = page_html()
+        for token in ("prefers-reduced-motion", 'id="motion-toggle"', 'id="mission-strip"'):
+            self.assertIn(token, html)
+        for forbidden in ("innerHTML", "setInterval"):
+            self.assertNotIn(forbidden, html)
+
+        r1 = project_task(dict(id="R01", protocol_version=2, current_round="r1", goal="前置任务", rounds=[dict(id="r1", state="review_passed", phase="done", todos=[dict(title="步骤1", status="done")], attempts=[], evidence=[])]), {})
+        r2 = project_task(dict(id="R02", protocol_version=2, current_round="r2", goal="进行中任务", rounds=[dict(id="r2", state="implementing", phase="implementation", todos=[dict(title="步骤A", status="done"), dict(title="步骤B", status="pending")], attempts=[], evidence=[])]), {})
+        r3 = project_task(dict(id="R03", protocol_version=2, current_round="r3", goal="待开工任务", rounds=[dict(id="r3", state="created", phase="planning", todos=[], attempts=[], evidence=[])]), {})
+        waiting_signoff = project_task(dict(id="R04", protocol_version=2, current_round="r4", goal="待验收任务", rounds=[dict(id="r4", state="review_passed", phase="done", todos=[], attempts=[], evidence=[])]), {})
+        rejected = project_task(dict(id="R05", protocol_version=2, current_round="r5", goal="被打回任务", rounds=[dict(id="r5", state="review_failed", phase="review", todos=[], attempts=[], evidence=[dict(kind="review", valid=True, data=dict(axes=dict(spec=dict(conclusion="pass", findings=[]), standards=dict(conclusion="fail", findings=[dict(message="修复问题", required=True, resolved=False)]))))])]), {})
+        r2_verifying = project_task(dict(id="R02", protocol_version=2, current_round="r2", goal="进行中任务", rounds=[dict(id="r2", state="running", phase="verification", todos=[dict(title="步骤A", status="done"), dict(title="步骤B", status="done")], attempts=[], evidence=[])]), {})
+
+        stub = r'''class Node {
+          constructor(tag) { this.tag=tag;this.children=[];this.style={};this.dataset={};this.open=false;this.hidden=false;this.value='';this.content='';this.events={};this.isConnected=true; }
+          set textContent(v) { this.content=String(v);this.children=[]; }
+          get textContent() { return this.content+this.children.map(n=>n.textContent).join(' '); }
+          append(...nodes) { this.children.push(...nodes); }
+          replaceChildren(...nodes) { this.content='';this.children=nodes; }
+          addEventListener(name, handler) { this.events[name]=handler; }
+          toggle(open) { this.open=open;this.events.toggle?.(); }
+        }
+        const nodes={}; const document={createElement:tag=>new Node(tag),getElementById:id=>nodes[id]||(nodes[id]=new Node('div'))};
+        function walk(n) { return [n,...n.children.flatMap(walk)]; }
+        '''
+        script = html.split("<script>")[1].split("</script>")[0].split("byId('refresh').addEventListener")[0]
+        fixtures = dict(r1=r1, r2=r2, r3=r3, waitingSignoff=waiting_signoff, rejected=rejected, r2Verifying=r2_verifying)
+        checks = r'''
+        const nowSec = Math.floor(Date.now() / 1000);
+        nodes['state-filter'] = new Node('select'); nodes['state-filter'].value = 'all';
+        nodes['tier-filter'] = new Node('select'); nodes['tier-filter'].value = 'all';
+        const freshR2 = {...fx.r2, updated_at: nowSec - 30};
+        if (pickSpotlightTask([fx.r1, freshR2, fx.r3]).id !== 'R02') throw Error('应选中进行中任务作为聚光灯');
+        renderTasks([fx.r1, freshR2, fx.r3]);
+        const strip = nodes['mission-strip'];
+        if (strip.hidden !== false) throw Error('多任务时应展示顶部串行总览');
+        const mNodes = walk(strip).filter(n => n.className === 'mission-node');
+        const mLinks = walk(strip).filter(n => n.className === 'mission-link');
+        if (mNodes.length !== 3 || mLinks.length !== 2) throw Error('顶部总览节点或连线数量错误');
+        const cards = nodes.tasks.children;
+        if (cards[1].dataset.spotlight !== 'true' || cards[0].dataset.compact !== 'true') throw Error('卡片聚光灯或紧凑折叠状态错误');
+        const botR2 = walk(cards[1]).find(n => n.className === 'cyber-bot');
+        if (!botR2 || botR2.dataset.botMood !== 'code') throw Error('实施阶段机器人应为编码状态');
+
+        renderTasks([{...fx.r2, updated_at: nowSec - 600}]);
+        const staleBot = walk(nodes.tasks.children[0]).find(n => n.className === 'cyber-bot');
+        if (!staleBot || staleBot.dataset.botMood !== 'sleep') throw Error('超过 5 分钟未更新的非终态任务机器人应自动休眠');
+
+        renderTasks([{...fx.waitingSignoff, updated_at: nowSec - 7200}]);
+        const trayCard = nodes.tasks.children[0];
+        const trayBot = walk(trayCard).find(n => n.className === 'cyber-bot');
+        const pipeNodesWait = walk(trayCard).filter(n => n.className === 'pipe-node');
+        if (!trayBot || trayBot.dataset.botMood !== 'tray') throw Error('待人工验收终态机器人应举托盘而非休眠');
+        if (pipeNodesWait[4].dataset.step !== 'wait') throw Error('待人工验收阶段 5 应为 wait 状态');
+
+        renderTasks([{...fx.rejected, updated_at: nowSec - 20}]);
+        const rejCard = nodes.tasks.children[0];
+        const rejBot = walk(rejCard).find(n => n.className === 'cyber-bot');
+        const rejWires = walk(rejCard).filter(n => n.className === 'pipe-wire');
+        if (!rejBot || rejBot.dataset.botMood !== 'alert') throw Error('评审打回机器人应为警示状态');
+        if (rejWires[2].dataset.flow !== 'reverse') throw Error('评审打回前导连线应反向回流');
+
+        renderTasks([{...fx.r2, updated_at: nowSec - 15}]);
+        renderTasks([{...fx.r2Verifying, updated_at: nowSec - 5}]);
+        const advCard = nodes.tasks.children[0];
+        const advBot = walk(advCard).find(n => n.className === 'cyber-bot');
+        const advNodes = walk(advCard).filter(n => n.className === 'pipe-node');
+        if (!advBot || advBot.dataset.moving !== 'forward') throw Error('阶段推进时机器人应有前向移动标记');
+        if (advNodes[2].dataset.justAdvanced !== 'true') throw Error('推进后的目标阶段应触发点亮标记');
+        '''
+        payload = f"\nconst fx={json.dumps(fixtures, ensure_ascii=False)};\n"
+        result = subprocess.run(["node", "-e", stub + script + payload + checks], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_real_hook_heartbeat_wakes_and_stops_cyber_bot(self):
+        import hashlib
+        from pathlib import Path
+        import tempfile
+        import dashboard_data
+
+        with tempfile.TemporaryDirectory() as tmp:
+            db_dir = Path(tmp)
+            sid = "sess-live-1"
+            hb_file = db_dir / ("hook-session-" + hashlib.sha256(sid.encode()).hexdigest() + ".json")
+            hb_file.write_text(json.dumps({"session_id": sid, "host": "claude", "last_event": "PreToolUse", "last_tool": "Edit", "updated_at": 1234.5}), encoding="utf-8")
+            hb = dashboard_data._session_heartbeat(db_dir, sid)
+            self.assertEqual(hb, {"at": 1234.5, "host": "claude", "event": "PreToolUse", "tool": "Edit"})
+
+            bad_sid = "sess-mismatch"
+            bad_file = db_dir / ("hook-session-" + hashlib.sha256(bad_sid.encode()).hexdigest() + ".json")
+            bad_file.write_text(json.dumps({"session_id": "other", "updated_at": 1234.5}), encoding="utf-8")
+            self.assertIsNone(dashboard_data._session_heartbeat(db_dir, bad_sid))
+
+            sym_sid = "sess-sym"
+            sym_file = db_dir / ("hook-session-" + hashlib.sha256(sym_sid.encode()).hexdigest() + ".json")
+            sym_file.symlink_to(hb_file)
+            self.assertIsNone(dashboard_data._session_heartbeat(db_dir, sym_sid))
+
+        if shutil.which("node"):
+            r2 = project_task(dict(id="R02", protocol_version=2, current_round="r2", goal="进行中任务", rounds=[dict(id="r2", state="implementing", phase="implementation", todos=[dict(title="步骤A", status="done"), dict(title="步骤B", status="pending")], attempts=[], evidence=[])]), {})
+            r2_running = project_task(dict(id="R02", protocol_version=2, current_round="r2", goal="进行中任务", rounds=[dict(id="r2", state="running", phase="verification", todos=[dict(title="步骤A", status="done"), dict(title="步骤B", status="done")], attempts=[], evidence=[])]), {})
+            waiting_signoff = project_task(dict(id="R04", protocol_version=2, current_round="r4", goal="待验收任务", rounds=[dict(id="r4", state="review_passed", phase="done", todos=[], attempts=[], evidence=[])]), {})
+            html = page_html()
+            stub = r'''class Node {
+              constructor(tag) { this.tag=tag;this.children=[];this.style={};this.dataset={};this.open=false;this.hidden=false;this.value='';this.content='';this.events={};this.isConnected=true; }
+              set textContent(v) { this.content=String(v);this.children=[]; }
+              get textContent() { return this.content+this.children.map(n=>n.textContent).join(' '); }
+              append(...nodes) { this.children.push(...nodes); }
+              replaceChildren(...nodes) { this.content='';this.children=nodes; }
+              addEventListener(name, handler) { this.events[name]=handler; }
+            }
+            const nodes={}; const document={createElement:tag=>new Node(tag),getElementById:id=>nodes[id]||(nodes[id]=new Node('div'))};
+            function walk(n) { return [n,...n.children.flatMap(walk)]; }
+            '''
+            script = html.split("<script>")[1].split("</script>")[0].split("byId('refresh').addEventListener")[0]
+            checks = r'''
+            const nowSec = Math.floor(Date.now() / 1000);
+            nodes['state-filter'] = new Node('select'); nodes['state-filter'].value = 'all';
+            nodes['tier-filter'] = new Node('select'); nodes['tier-filter'].value = 'all';
+
+            renderTasks([{...fx.r2, updated_at: nowSec - 19 * 3600, heartbeat: {at: nowSec - 10, host: 'claude', event: 'PreToolUse', tool: 'Edit'}}]);
+            let bot = walk(nodes.tasks.children[0]).find(n => n.className === 'cyber-bot');
+            if (!bot || bot.dataset.botMood !== 'code' || bot.dataset.heartbeat !== 'live') throw Error('有实时心跳时机器人应处于唤醒工作态');
+            if (!bot.textContent.includes('编辑中')) throw Error('实时工具心跳应展示当前动作：' + bot.textContent);
+
+            renderTasks([{...fx.r2, updated_at: nowSec - 20, heartbeat: {at: nowSec - 5, host: 'claude', event: 'Stop', tool: ''}}]);
+            bot = walk(nodes.tasks.children[0]).find(n => n.className === 'cyber-bot');
+            if (!bot || bot.dataset.botMood !== 'sleep' || !bot.textContent.includes('回合待机')) throw Error('Stop 事件应让机器人进入回合待机');
+
+            renderTasks([{...fx.r2, updated_at: nowSec - 19 * 3600, heartbeat: {at: nowSec - 600, host: 'claude', event: 'PreToolUse', tool: 'Bash'}}]);
+            bot = walk(nodes.tasks.children[0]).find(n => n.className === 'cyber-bot');
+            if (!bot || bot.dataset.botMood !== 'sleep') throw Error('心跳与更新均超 5 分钟时机器人应进入休眠');
+
+            renderTasks([{...fx.waitingSignoff, updated_at: nowSec - 7200, heartbeat: {at: nowSec - 5, host: 'claude', event: 'Stop', tool: ''}}]);
+            bot = walk(nodes.tasks.children[0]).find(n => n.className === 'cyber-bot');
+            if (!bot || bot.dataset.botMood !== 'tray') throw Error('待人工验收终态即使 Stop 也必须举托盘');
+
+            renderTasks([{...fx.r2Running, updated_at: nowSec - 900, heartbeat: {at: nowSec - 5, host: 'claude', event: 'Stop', tool: ''}}]);
+            bot = walk(nodes.tasks.children[0]).find(n => n.className === 'cyber-bot');
+            if (!bot || bot.dataset.botMood !== 'verify') throw Error('验证执行中（running）即使超 5 分钟或有 Stop 也不得休眠');
+            '''
+            payload = f"\nconst fx={json.dumps(dict(r2=r2, r2Running=r2_running, waitingSignoff=waiting_signoff), ensure_ascii=False)};\n"
+            result = subprocess.run(["node", "-e", stub + script + payload + checks], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()

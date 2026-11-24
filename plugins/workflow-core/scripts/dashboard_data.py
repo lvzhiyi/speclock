@@ -5,6 +5,7 @@
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -23,6 +24,8 @@ MAX_DOCUMENT_BYTES = 512 * 1024
 MAX_TOTAL_BYTES = 8 * 1024 * 1024
 MAX_DOCUMENTS = 256
 MAX_ENGINE_JSON_BYTES = 1024 * 1024
+MAX_HEARTBEAT_BYTES = 8192
+HOOK_SESSION_PREFIX = "hook-session-"
 STAGES = (("prd", "需求接收"), ("breakdown", "需求拆解"), ("kickoff", "开工准备"),
           ("proposal", "方案提案"), ("implementation", "实施"),
           ("verification", "验证"), ("review", "评审"), ("delivery", "交付"))
@@ -251,6 +254,30 @@ def _documents(root, config, issues):
     return sorted(paths)[:MAX_DOCUMENTS]
 
 
+def _session_heartbeat(db_dir: Path, session_id):
+    """只读读取会话最近一次宿主门禁心跳，不作为引擎通过或交付证据。"""
+    if not isinstance(session_id, str) or not 0 < len(session_id) <= 512:
+        return None
+    hb_path = db_dir / (HOOK_SESSION_PREFIX + hashlib.sha256(session_id.encode()).hexdigest() + ".json")
+    try:
+        if hb_path.parent.is_symlink() or hb_path.is_symlink() or not hb_path.is_file():
+            return None
+        if hb_path.stat().st_size > MAX_HEARTBEAT_BYTES:
+            return None
+        data = json.loads(hb_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    updated_at = data.get("updated_at") if isinstance(data, dict) else None
+    if not isinstance(data, dict) or data.get("session_id") != session_id or not isinstance(updated_at, (int, float)) or isinstance(updated_at, bool):
+        return None
+    return {
+        "at": updated_at,
+        "host": data.get("host") if isinstance(data.get("host"), str) and data.get("host") else None,
+        "event": data.get("last_event") if isinstance(data.get("last_event"), str) and data.get("last_event") else None,
+        "tool": data.get("last_tool") if isinstance(data.get("last_tool"), str) and data.get("last_tool") else None,
+    }
+
+
 def _engine_round_state(task):
     if task.get("protocol_version") == 2:
         rounds = task.get("rounds")
@@ -325,6 +352,9 @@ def _engine(root, task_id, result, task_map, stage_map):
                     and not any(isinstance(t, dict) and t.get("status") == "done" for t in (cur_round.get("todos") or []))):
                 continue
             task_map[identity] = project_task(task, previous or {})
+            hb = _session_heartbeat(path.parent, task_map[identity].get("session_id"))
+            if hb is not None:
+                task_map[identity]["heartbeat"] = hb
             if previous and previous.get("source"):
                 task_map[identity]["card_source"] = previous["source"]
             # 文档人工验收是独立来源，不覆盖轮次权威状态或引擎交付记录。
