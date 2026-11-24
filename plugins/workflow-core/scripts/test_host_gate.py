@@ -497,3 +497,53 @@ class HostGateTests(unittest.TestCase):
                 self.assertEqual(data["last_event"], "PreToolUse")
                 self.assertEqual(data["last_tool"], "Read")
                 self.assertEqual(data["updated_at"], 1024.0)
+
+    def test_hook_precheck_status_and_session_resolution(self):
+        proj = Path(self.tmp.name) / "precheck_proj"
+        proj.mkdir()
+        clean_env = {
+            k: v for k, v in os.environ.items()
+            if k not in {"WORKFLOW_HOST", "WORKFLOW_ENGINE_HOME", "CODEX_THREAD_ID", "CLAUDE_SESSION_ID", "CURSOR_PROJECT_DIR", "CURSOR_PLUGIN_ROOT", "CLAUDE_PLUGIN_ROOT", "CLAUDECODE"}
+        }
+        with patch.dict(os.environ, clean_env, clear=True):
+            initial = host_gate.hook_precheck_status(proj)
+            self.assertFalse(initial["hook_active"])
+            self.assertEqual(initial["hook_events"], [])
+            self.assertIn("ENGINE_HOOK_INACTIVE", initial["hook_warning"])
+            self.assertIn("原生单选卡片", initial["hook_warning"])
+            self.assertFalse((proj / ".speclock").exists())
+
+        with patch.dict(os.environ, {**clean_env, "WORKFLOW_HOST": "codex"}, clear=True):
+            host_gate.record_hook_activity(proj, {"session_id": "sess-old", "hook_event_name": "SessionStart"})
+            host_gate.record_hook_activity(proj, {"session_id": "sess-old", "hook_event_name": "UserPromptSubmit"})
+
+        stale_task = {"rounds": [{"id": "r1", "session_id": "sess-old"}]}
+        with patch.dict(os.environ, {**clean_env, "CODEX_THREAD_ID": "sess-new"}, clear=True):
+            mismatch = host_gate.hook_precheck_status(proj, task=stale_task)
+            self.assertEqual(mismatch["session_id"], "sess-new")
+            self.assertFalse(mismatch["hook_active"])
+            self.assertTrue(mismatch["other_active_sessions"])
+            self.assertIn("ENGINE_HOOK_INACTIVE", mismatch["hook_warning"])
+            self.assertIn("Settings → Hooks", mismatch["hook_warning"])
+            self.assertIn("--session", mismatch["hook_warning"])
+
+        with patch.dict(os.environ, clean_env, clear=True):
+            unknown = host_gate.hook_precheck_status(proj)
+            self.assertIsNone(unknown["hook_active"])
+            self.assertEqual(unknown["hook_events"], [])
+            self.assertIn("ENGINE_HOOK_SESSION_UNKNOWN", unknown["hook_warning"])
+
+            from_task = host_gate.hook_precheck_status(proj, task=stale_task)
+            self.assertEqual(from_task["session_id"], "sess-old")
+            self.assertTrue(from_task["hook_active"])
+            self.assertEqual(from_task["hook_host"], "codex")
+            self.assertNotIn("hook_warning", from_task)
+
+        with patch.dict(os.environ, {**clean_env, "WORKFLOW_HOST": "codex"}, clear=True):
+            host_gate.record_hook_activity(proj, {"session_id": "sess-new", "hook_event_name": "SessionStart"})
+            host_gate.record_hook_activity(proj, {"session_id": "sess-new", "hook_event_name": "UserPromptSubmit"})
+            ready = host_gate.hook_precheck_status(proj, session="sess-new")
+            self.assertTrue(ready["hook_active"])
+            self.assertEqual(ready["hook_host"], "codex")
+            self.assertNotIn("hook_warning", ready)
+            self.assertNotIn("other_active_sessions", ready)

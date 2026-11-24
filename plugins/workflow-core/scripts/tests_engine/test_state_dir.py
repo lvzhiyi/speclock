@@ -245,7 +245,10 @@ class StateDirTests(unittest.TestCase):
                 env=env,
             )
             self.assertEqual(listed.returncode, 0)
-            self.assertEqual(json.loads(listed.stdout), {"ok": True, "tasks": []})
+            listed_payload = json.loads(listed.stdout)
+            self.assertTrue(listed_payload["ok"])
+            self.assertEqual(listed_payload["tasks"], [])
+            self.assertFalse(listed_payload["hooks"]["hook_active"])
             self.assertFalse((root / ".speclock").exists())
 
     def test_legacy_migration_copies_once_and_preserves_old_db(self):

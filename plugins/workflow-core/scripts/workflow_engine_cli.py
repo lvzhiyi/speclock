@@ -33,14 +33,19 @@ def parser():
     result.add_argument('--root', default='.')
     result.add_argument('--db')
     commands = result.add_subparsers(dest='action', required=True, parser_class=Parser)
+    hooks_command = commands.add_parser('check-hooks', help='前置检查当前会话的 SpecLock Hook 是否已授权并运行')
+    hooks_command.add_argument('--session', default=None, help='可选：当前宿主会话 ID（Codex 默认读取 CODEX_THREAD_ID）')
     list_command = commands.add_parser('list')
     list_command.add_argument('--active', action='store_true', help='仅显示未终态的活动任务')
+    list_command.add_argument('--session', default=None, help='可选：当前宿主会话 ID，用于内联钩子状态检查')
     commands.add_parser('reconcile-cards', help='按任务卡结案状态自动关闭未开工本地任务')
     reads = ('status', 'snapshot', 'history', 'progress', 'render-md')
     actions = reads + ('prepare', 'begin', 'create', 'start', 'resume', 'run', 'complete', 'cancel', 'recover', 'confirm-plan', 'confirm-tier', 'request-confirmation', 'approve-proposal', 'read-baseline', 'register-baseline', 'record-tdd', 'finish-step', 'finish-implementation', 'review', 'sync-review-card', 'update-task', 'adopt-protocol', 'bind-executor', 'repair', 'refine-steps', 'return-task')
     for action in actions:
         command = commands.add_parser(action)
         command.add_argument('--task', required=True)
+        if action in ('status', 'resume'):
+            command.add_argument('--session', default=None, help='可选：当前宿主会话 ID，用于内联钩子状态检查')
         if action not in reads:
             command.add_argument('--request', default=None, help='幂等请求 ID；省略时自动生成')
         if action not in reads + ('create', 'prepare', 'begin'):
@@ -315,9 +320,14 @@ def main(argv=None):
         root = Path(args.root).resolve()
         raw_database = Path(args.db) if args.db else default_db(root)
         state_target = raw_database.parent
-        if not args.db:
+        if not args.db and args.action != 'check-hooks':
             migrate_legacy(root)
+        if args.action == 'check-hooks':
+            from host_gate import hook_precheck_status
+            print(json.dumps({'ok': True, 'hooks': hook_precheck_status(root, args.session)}, ensure_ascii=False))
+            return 0
         if args.action == 'list':
+            from host_gate import hook_precheck_status
             from session_binding import list_tasks
             from workflow_engine.model import EngineError
 
@@ -327,7 +337,7 @@ def main(argv=None):
                 message = str(exc)
                 code = message.split('：', 1)[0] if '：' in message else 'BLOCKED'
                 raise EngineError(code, message) from exc
-            print(json.dumps({'ok': True, 'tasks': tasks}, ensure_ascii=False))
+            print(json.dumps({'ok': True, 'tasks': tasks, 'hooks': hook_precheck_status(root, args.session)}, ensure_ascii=False))
             return 0
         database = raw_database.resolve()
         if args.action == 'reconcile-cards':
@@ -469,6 +479,13 @@ def main(argv=None):
         if key == 'task' and isinstance(value, dict) and value.get('protocol_version') == 2 and args.action not in ('status', 'snapshot'):
             from agent_progress import project_progress
             output['progress'] = project_progress(value)
+        if args.action in ('status', 'prepare', 'bind-executor', 'resume'):
+            from host_gate import hook_precheck_status
+            output['hooks'] = hook_precheck_status(
+                root,
+                getattr(args, 'session', None),
+                task=value if isinstance(value, dict) else None,
+            )
         if args.action in CONFIRM_ACTIONS and not getattr(args, 'json', False) and sys.stdout.isatty():
             from review_markdown import render_confirmation_receipt
             print(render_confirmation_receipt(args.action, value, progress=output.get('progress'), review_path=review_path))

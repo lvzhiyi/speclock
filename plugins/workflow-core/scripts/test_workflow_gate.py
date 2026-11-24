@@ -275,6 +275,96 @@ class GateTests(unittest.TestCase):
         self.assertEqual(task["tier"], "standard")
         self.assertNotIn("tier_confirmation", task["missing"])
 
+    def test_cli_hook_precheck_on_check_hooks_and_entry_commands(self):
+        subprocess.run(["git", "init", "-q", str(self.project)], check=True)
+        (self.project / "rules.md").write_text("规范全文", encoding="utf-8")
+        (self.project / "ai-workflow.yaml").write_text(
+            "version: 1\n"
+            "baseline:\n"
+            "  required:\n"
+            "    - rules.md\n"
+            "verify:\n"
+            f"  light: {sys.executable} -c pass\n"
+            f"  standard: {sys.executable} -c pass\n",
+            encoding="utf-8",
+        )
+        cli = str(HERE / "workflow_engine_cli.py")
+        base_env = {
+            k: v for k, v in os.environ.items()
+            if not k.startswith("WORKFLOW_") and k not in {"CODEX_THREAD_ID", "CLAUDE_SESSION_ID", "CURSOR_PROJECT_DIR", "CURSOR_PLUGIN_ROOT", "CLAUDE_PLUGIN_ROOT", "CLAUDECODE"}
+        }
+
+        clean_check = subprocess.run(
+            [sys.executable, cli, "--root", str(self.project), "check-hooks", "--session", "s-pre"],
+            text=True, capture_output=True, env=base_env,
+        )
+        self.assertEqual(clean_check.returncode, 0, clean_check.stdout + clean_check.stderr)
+        clean_payload = json.loads(clean_check.stdout)
+        self.assertTrue(clean_payload["ok"])
+        self.assertFalse(clean_payload["hooks"]["hook_active"])
+        self.assertFalse((self.project / ".speclock").exists())
+
+        cli_env = {**base_env, "WORKFLOW_ENGINE_HOME": self.tmp.name}
+
+        def run_cli(*args, extra_env=None):
+            env = {**cli_env, **(extra_env or {})}
+            proc = subprocess.run([sys.executable, cli, "--root", str(self.project), *args], text=True, capture_output=True, env=env)
+            self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+            return json.loads(proc.stdout)
+
+        self.assertFalse(run_cli("check-hooks", "--session", "s-pre")["hooks"]["hook_active"])
+        listed = run_cli("list", "--session", "s-pre")
+        self.assertEqual(listed["tasks"], [])
+        self.assertFalse(listed["hooks"]["hook_active"])
+
+        details = {"goal": "测试前置检查", "scope": ["src"], "source": "需求", "dependencies": [], "steps": [{"id": "s1", "title": "步骤一"}]}
+        prep = run_cli(
+            "prepare", "--task", "T-PRE", "--tier", "轻量", "--acceptance", "A1",
+            "--details-json", json.dumps(details, ensure_ascii=False),
+            "--executor", "codex", "--session", "s-pre",
+        )
+        self.assertFalse(prep["hooks"]["hook_active"])
+        self.assertIn("ENGINE_HOOK_INACTIVE", prep["hooks"]["hook_warning"])
+        self.assertFalse(run_cli("status", "--task", "T-PRE", "--session", "s-pre")["hooks"]["hook_active"])
+        bound = run_cli(
+            "bind-executor", "--task", "T-PRE", "--version", str(prep["task"]["version"]),
+            "--executor", "codex", "--session", "s-pre",
+        )
+        self.assertFalse(bound["hooks"]["hook_active"])
+        resumed = run_cli("resume", "--task", "T-PRE", "--version", str(bound["task"]["version"]), "--session", "s-pre")
+        self.assertFalse(resumed["hooks"]["hook_active"])
+
+        self.assertEqual(self.hook("SessionStart", "codex", session_id="s-pre").returncode, 0)
+        self.assertEqual(self.hook("UserPromptSubmit", "codex", session_id="s-pre", prompt="执行 T-PRE").returncode, 0)
+
+        for payload in (
+            run_cli("check-hooks", "--session", "s-pre"),
+            run_cli("list", "--session", "s-pre"),
+            run_cli("status", "--task", "T-PRE", "--session", "s-pre"),
+            run_cli("bind-executor", "--task", "T-PRE", "--version", str(resumed["task"]["version"]), "--executor", "codex", "--session", "s-pre"),
+        ):
+            self.assertTrue(payload["hooks"]["hook_active"])
+            self.assertEqual(payload["hooks"]["hook_host"], "codex")
+            self.assertNotIn("hook_warning", payload["hooks"])
+
+        latest = run_cli("status", "--task", "T-PRE")
+        self.assertTrue(latest["hooks"]["hook_active"])
+        mismatch = run_cli("status", "--task", "T-PRE", extra_env={"CODEX_THREAD_ID": "s-other"})
+        self.assertFalse(mismatch["hooks"]["hook_active"])
+        self.assertEqual(mismatch["hooks"]["session_id"], "s-other")
+        self.assertTrue(mismatch["hooks"]["other_active_sessions"])
+
+        resumed_ok = run_cli("resume", "--task", "T-PRE", "--version", str(latest["task"]["version"]), "--session", "s-pre")
+        self.assertTrue(resumed_ok["hooks"]["hook_active"])
+        self.assertEqual(resumed_ok["hooks"]["hook_host"], "codex")
+        self.assertNotIn("hook_warning", resumed_ok["hooks"])
+
+        skills_dir = HERE.parent / "skills"
+        for skill_name in ("workflow", "kickoff"):
+            skill_text = (skills_dir / skill_name / "SKILL.md").read_text(encoding="utf-8")
+            self.assertIn("check-hooks", skill_text)
+            self.assertIn("hooks.hook_active", skill_text)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -391,7 +391,7 @@ def detect_host():
 
 def _inactive_hook_warning(host_hint):
     if host_hint == "codex":
-        guide = "请先在 Codex 的 Settings → Hooks（或 CLI /hooks）中信任并启用 workflow-core@speclock 的全部钩子，然后新开/重启会话重试；"
+        guide = "请先在 Codex 的 Settings → Hooks（或 CLI /hooks）中授权、信任并启用 workflow-core@speclock 的全部钩子，然后新开/重启会话重试；"
     elif host_hint == "cursor":
         guide = "请先确认已在 Cursor 中启用 workflow-core 插件与 hooks/cursor.json 钩子并重新加载会话；"
     elif host_hint == "claude":
@@ -399,9 +399,9 @@ def _inactive_hook_warning(host_hint):
     else:
         guide = "请先在宿主中启用并信任 workflow-core 的插件钩子（如 Codex 的 Settings → Hooks 或 /hooks）；"
     return (
-        "ENGINE_HOOK_INACTIVE：当前会话未检测到 SpecLock Hook 运行，聊天定档/批准回复不会被自动登记。"
+        "ENGINE_HOOK_INACTIVE：当前会话未检测到 SpecLock Hook 运行，原生单选卡片与聊天定档/批准回复均不会被自动登记。"
         + guide
-        + "或改用交互终端执行 confirm-tier / approve-proposal，不要让用户反复发送聊天口令。"
+        + "或改用交互终端执行 confirm-tier / approve-proposal，不要调用原生单选工具或让用户反复发送聊天口令。"
     )
 
 
@@ -423,10 +423,83 @@ def hook_confirmation_status(root, session):
     if not hook_active:
         observed = ", ".join(events) if events else "无"
         result["hook_warning"] = (
-            f"ENGINE_HOOK_INACTIVE：当前会话仅检测到部分钩子（{observed}），尚未检测到 UserPromptSubmit / beforeSubmitPrompt 回调，聊天定档/批准回复可能无法被自动登记。"
+            f"ENGINE_HOOK_INACTIVE：当前会话仅检测到部分钩子（{observed}），尚未检测到 UserPromptSubmit / beforeSubmitPrompt 回调，原生单选卡片（含异步回执）与聊天定档/批准回复可能无法被自动登记。"
             "请在宿主中确认已信任并启用 UserPromptSubmit / beforeSubmitPrompt 钩子，或改用交互终端执行 confirm-tier / approve-proposal。"
         )
     return result
+
+
+def resolve_cli_session(session=None, task=None):
+    """按显式参数、当前宿主会话环境变量、任务当前轮次绑定的优先级解析会话 ID。"""
+    if isinstance(session, str) and session.strip():
+        return session.strip()
+    for env_key in ("CODEX_THREAD_ID", "CLAUDE_SESSION_ID"):
+        value = os.environ.get(env_key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    if isinstance(task, dict):
+        rounds = task.get("rounds")
+        if isinstance(rounds, list) and rounds and isinstance(rounds[-1], dict):
+            bound = rounds[-1].get("session_id")
+            if isinstance(bound, str) and bound.strip():
+                return bound.strip()
+    return None
+
+
+def _scan_hook_activities(root):
+    """只读扫描状态目录下已记录的钩子会话文件，绝不创建目录或写入任何文件。"""
+    from workflow_engine_cli import default_db
+    state = default_db(root).parent
+    if state.is_symlink() or not state.is_dir():
+        return []
+    activities = []
+    try:
+        entries = list(state.glob(HOOK_SESSION_PREFIX + "*.json"))
+    except OSError:
+        return []
+    for entry in entries:
+        try:
+            if entry.is_symlink() or not entry.is_file():
+                continue
+            data = json.loads(entry.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if isinstance(data, dict):
+            activities.append(data)
+    return activities
+
+
+def hook_precheck_status(root, session=None, task=None, max_recent_age=600.0):
+    """只读前置检查当前会话 SpecLock Hook 状态；支持缺省会话及错配排查。"""
+    resolved = resolve_cli_session(session=session, task=task)
+    if resolved:
+        result = hook_confirmation_status(root, resolved)
+        result["session_id"] = resolved
+        if not result["hook_active"] and not result["hook_events"]:
+            now = time.time()
+            has_recent_other = any(
+                entry.get("session_id") != resolved
+                and isinstance(entry.get("updated_at"), (int, float))
+                and not isinstance(entry.get("updated_at"), bool)
+                and now - float(entry["updated_at"]) <= max_recent_age
+                for entry in _scan_hook_activities(root)
+            )
+            if has_recent_other:
+                result["other_active_sessions"] = True
+                result["hook_warning"] += "（另检测到本项目存在其他会话的近期钩子记录，若确认已授权，请核对 --session 是否与当前宿主真实会话 ID 一致。）"
+        return result
+    activities = _scan_hook_activities(root)
+    if not activities:
+        return {
+            "hook_active": False,
+            "hook_events": [],
+            "hook_warning": _inactive_hook_warning(detect_host()),
+        }
+    return {
+        "hook_active": None,
+        "hook_events": [],
+        "hook_warning": "ENGINE_HOOK_SESSION_UNKNOWN：未能确定当前会话 ID，请传入 --session（Codex 为 CODEX_THREAD_ID，Cursor 为 conversation_id）以精确核对当前会话的 SpecLock Hook 状态。",
+    }
 
 
 def normalize_chat_reply(prompt):
