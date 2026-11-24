@@ -16,7 +16,11 @@ from baseline_config import resolve_baselines
 from workflow_config import load
 
 # 原生进度更新只改变宿主展示，不构成引擎通过证据或产品文件写入。
-READ_TOOLS = {"TodoWrite", "update_plan", "Read", "ReadFile", "Glob", "Grep", "rg", "LS", "WebSearch", "WebFetch", "Skill", "AskUserQuestion", "ExitPlanMode"}
+READ_TOOLS = {
+    "TodoWrite", "update_plan", "Read", "ReadFile", "Glob", "Grep", "rg", "LS",
+    "WebSearch", "WebFetch", "Skill", "AskUserQuestion", "ExitPlanMode",
+    "clocksleep", "clock.sleep", "clock:sleep", "clock__sleep", "sleep", "wait",
+}
 SHELL_TOOLS = {"Bash", "shell", "exec_command", "run_shell_command", "Shell"}
 PLANNING_EDIT_TOOLS = {"Write", "Edit", "apply_patch"}
 EDIT_TOOLS = {"Edit", "Write", "MultiEdit", "NotebookEdit", "apply_patch"}

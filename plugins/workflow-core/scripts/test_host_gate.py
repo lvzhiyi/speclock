@@ -36,10 +36,10 @@ class HostGateTests(unittest.TestCase):
             self.assertIsNone(host_gate.pre_tool(self.event("Bash", command="git status --short")))
 
     def test_native_progress_updates_are_observational(self):
-        with patch.object(host_gate, "load_task", side_effect=AssertionError("展示进度不应查询授权或源码哈希")):
-            for tool in ("TodoWrite", "update_plan"):
+        with patch.object(host_gate, "load_task", side_effect=AssertionError("展示进度与等待不应查询授权或源码哈希")):
+            for tool in ("TodoWrite", "update_plan", "clocksleep", "clock.sleep", "sleep", "wait"):
                 with self.subTest(tool=tool):
-                    self.assertIsNone(host_gate.pre_tool(self.event(tool, todos=[])))
+                    self.assertIsNone(host_gate.pre_tool(self.event(tool, duration_ms=30000)))
 
     def test_arbitrary_shell_and_mcp_are_writes(self):
         for tool, data in [("Bash", {"command": "python3 -c 'open(\"x\",\"w\")'"}), ("Bash", {"command": "git status; touch x"}), ("mcp__service__update", {})]:

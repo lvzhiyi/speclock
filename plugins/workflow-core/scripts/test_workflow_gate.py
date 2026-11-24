@@ -210,6 +210,8 @@ class GateTests(unittest.TestCase):
         pending_out = self.hook("PostToolUse", "codex", **async_tier_event, tool_response={"accepted": True}).stdout
         self.assertIn("ENGINE_CONFIRMATION_PENDING", pending_out)
         self.assertIn("clock.sleep", pending_out)
+        for wait_tool in ("clocksleep", "clock.sleep", "sleep", "wait"):
+            self.assertEqual(self.hook("PreToolUse", "codex", session_id=session, tool_name=wait_tool, tool_input={"duration_ms": 30000}, tool_use_id=f"call-{wait_tool}").stdout, "")
 
         # 错误 call_id 的回执必须被拒绝且不入库。
         bad_call_res = self.hook("UserPromptSubmit", "codex", session_id=session, prompt=wrap_reply("call-wrong", tier_title, "完整档 (Recommended)")).stdout
