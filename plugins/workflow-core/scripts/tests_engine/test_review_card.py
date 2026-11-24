@@ -277,3 +277,29 @@ class ReviewCardTests(unittest.TestCase):
         self.assertEqual((code, result['code']), (2, 'CARD_CONFLICT'))
         self.assertEqual(self.card.read_bytes(), original)
         self.assertEqual(self.engine.status('t')['state'], 'passed')
+
+    def test_level4_subtask_heading_stops_parent_scan_and_supports_direct_subtask_writeback(self):
+        nested = (
+            '## 我的模块\r\n'
+            '### MOD-R1 当前任务\r\n'
+            '- 协作状态：实施中\r\n'
+            '- [ ] 子需求人工验收/交付完成\r\n'
+            '#### MOD-R1-T1 子任务\r\n'
+            '- 协作状态：已完成\r\n'
+            '- [x] 子任务完成\r\n'
+            '### MOD-R2 其他任务\r\n'
+            '- 协作状态：待验证与评审\r\n'
+        )
+        self.card.write_bytes(nested.encode())
+        task = self.verified()
+        code, result = self.review(task)
+        self.assertEqual(code, 0, result)
+        expected = nested.replace('实施中', '评审通过，待人工验收', 1)
+        self.assertEqual(self.card.read_bytes(), expected.encode())
+
+        sub_unchecked = nested.replace('- [x] 子任务完成', '- [ ] 子任务完成', 1)
+        self.card.write_bytes(sub_unchecked.encode())
+        self.assertEqual(review_card.find_card(self.root, 'MOD-R1-T1'), {'path': CARD, 'id': 'MOD-R1-T1'})
+        self.assertEqual(review_card.read_status(self.root.resolve(), {'path': CARD, 'id': 'MOD-R1-T1'}), {'status': '已完成', 'checked': False})
+        rewritten = review_card.replace_status(sub_unchecked.encode(), 'MOD-R1-T1').decode('utf-8')
+        self.assertEqual(rewritten, sub_unchecked.replace('- 协作状态：已完成', '- 协作状态：评审通过，待人工验收', 1))

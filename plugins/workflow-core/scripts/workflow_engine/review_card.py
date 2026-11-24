@@ -18,7 +18,7 @@ from .snapshot import capture, capture_files, fingerprint, sensitive
 STATUS = '评审通过，待人工验收'
 CLOSED = {'评审通过，待人工验收', '已验收', '已完成', '已交付'}
 MAX_BYTES = 1048576
-HEADING = re.compile(r'^ {0,3}(#{1,3})(?:[ \t]+(\S+)|[ \t]*$)')
+HEADING = re.compile(r'^ {0,3}(#{1,6})(?:[ \t]+(\S+)|[ \t]*$)')
 FENCE = re.compile(r'^ {0,3}(`{3,}|~{3,})(.*)$')
 LABEL = r'(?:协作状态|状态)'
 FIELD = re.compile(
@@ -75,7 +75,7 @@ def _scan(data, card_id):
                 continue
         heading = HEADING.match(body)
         if heading:
-            selected = heading.groups() == ('###', card_id)
+            selected = heading[1] in ('###', '####') and heading[2] == card_id
             sections += selected
         if selected and CHECKED_BOX.match(body):
             checked = True
@@ -109,7 +109,7 @@ def read_status(root, binding):
 
 
 def find_card(root, card_id):
-    """在配置任务卡目录直接子级中按 ### <id> 唯一匹配未绑定任务卡。"""
+    """在配置任务卡目录直接子级中按 ### / #### <id> 唯一匹配未绑定任务卡。"""
     if not isinstance(card_id, str) or not re.fullmatch(r'[^\s#]+', card_id):
         return None
     root_path = Path(root).resolve()
