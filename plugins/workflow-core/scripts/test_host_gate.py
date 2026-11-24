@@ -547,3 +547,10 @@ class HostGateTests(unittest.TestCase):
             self.assertEqual(ready["hook_host"], "codex")
             self.assertNotIn("hook_warning", ready)
             self.assertNotIn("other_active_sessions", ready)
+
+    def test_recommended_suffix_only_accepted_for_native_options(self):
+        self.assertEqual(host_gate.normalize_tier_label("轻量档 (Recommended)", allow_recommended=True), "light")
+        self.assertEqual(host_gate.normalize_tier_label("标准档（推荐）", allow_recommended=True), "standard")
+        self.assertTrue(host_gate.is_approval_accept_label("批准方案 (Recommended)", allow_recommended=True))
+        self.assertEqual(host_gate.parse_chat_confirmation_reply("选轻量档 (Recommended)"), (None, None))
+        self.assertEqual(host_gate.parse_chat_confirmation_reply("批准方案 (Recommended)"), (None, None))

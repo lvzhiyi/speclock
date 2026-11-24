@@ -632,10 +632,15 @@ def option_labels(question):
     return labels
 
 
-def normalize_tier_label(label):
+def _strip_recommended_suffix(text):
+    """剥离宿主单选推荐标记后缀（仅用于原生选项卡片，不放宽聊天口令）。"""
+    return re.sub(r"\s*(?:\(recommended\)|（推荐）|\(推荐\))\s*$", "", text.strip(), flags=re.IGNORECASE)
+
+
+def normalize_tier_label(label, allow_recommended=False):
     if not isinstance(label, str):
         return None
-    text = label.strip()
+    text = _strip_recommended_suffix(label) if allow_recommended else label.strip()
     if text in TIER_LABELS:
         return TIER_LABELS[text]
     if text.startswith("选") and text[1:] in TIER_LABELS:
@@ -643,11 +648,18 @@ def normalize_tier_label(label):
     return None
 
 
+def is_approval_accept_label(label, allow_recommended=False):
+    if not isinstance(label, str):
+        return False
+    text = _strip_recommended_suffix(label) if allow_recommended else label.strip()
+    return text == APPROVAL_ACCEPT_LABEL
+
+
 def offered_tiers(question):
     labels = option_labels(question)
     if not labels or len(labels) != 3:
         return False
-    mapped = [normalize_tier_label(label) for label in labels]
+    mapped = [normalize_tier_label(label, allow_recommended=True) for label in labels]
     return all(mapped) and set(mapped) == set(TIER_LABELS.values())
 
 
@@ -655,7 +667,8 @@ def offered_approval(question):
     labels = option_labels(question)
     if not labels or len(labels) < 2:
         return False
-    return len(set(labels)) == len(labels) and APPROVAL_ACCEPT_LABEL in labels
+    accept_count = sum(1 for label in labels if is_approval_accept_label(label, allow_recommended=True))
+    return len(set(labels)) == len(labels) and accept_count == 1
 
 
 def extract_native_answer(host, question, response):
@@ -706,6 +719,13 @@ def prepare_confirmation(event, root):
     host = native_confirmation_host(event)
     if host is None:
         return None
+    tool = event.get("tool_name")
+    if host == "codex" and tool == "request_user_input_async":
+        return (
+            "ENGINE_CONFIRMATION_SYNC_REQUIRED：Codex 定档与方案批准须使用同步阻塞的 request_user_input"
+            "（不要使用 request_user_input_async，异步弹窗会在继续执行工具或输出回复后自动消失）。"
+            "请改用 request_user_input（单选、带非空 id）；若当前会话确实未提供 request_user_input，请改用 request-confirmation 走聊天口令确认。"
+        )
     try:
         task = load_task(root)
         error = binding_error(event, task)
@@ -739,9 +759,6 @@ def prepare_confirmation(event, root):
         pending = dict(confirmation_target(task, action), host=host, tool=tool,
                        call=event["tool_use_id"], input=data, request=request_id)
         save_pending(path, pending, root=root)
-        if tool == "request_user_input_async":
-            save_pending(pending_path(root, event.get("session_id"), "chat:"),
-                         dict(confirmation_target(task, action), request=request_id), root=root)
         return None
     except Exception as exc:
         return "ENGINE_CONFIRMATION_REQUIRED：" + str(exc) + "；" + CONFIRM_HELP
@@ -769,34 +786,26 @@ def complete_confirmation(event):
         try:
             response = json.loads(response)
         except ValueError:
-            if pending["tool"] == "request_user_input_async":
-                return "ENGINE_CONFIRMATION_PENDING：原生单选卡片已展示，等待用户点选；收到用户选择后请重新读取 status 核实。"
             return CONFIRM_HELP
     if (pending.get("host") != host or pending["call"] != event.get("tool_use_id") or
             pending["tool"] != event.get("tool_name") or pending["input"] != event.get("tool_input") or
             (isinstance(response, dict) and (response.get("error") or response.get("is_error")))):
         return CONFIRM_HELP
     if not isinstance(response, dict):
-        if pending["tool"] == "request_user_input_async":
-            return "ENGINE_CONFIRMATION_PENDING：原生单选卡片已展示，等待用户点选；收到用户选择后请重新读取 status 核实。"
         return CONFIRM_HELP
     tier = None
     if pending["action"] == "tier_confirmation":
         question = native_question(pending["input"])
         answer = extract_native_answer(host, question, response)
-        if answer is None and pending["tool"] == "request_user_input_async":
-            return "ENGINE_CONFIRMATION_PENDING：原生单选卡片已展示，等待用户点选；收到用户选择后请重新读取 status 核实。"
         if answer is not None and offered_tiers(question) and not question.get("multiSelect"):
-            tier = normalize_tier_label(answer)
+            tier = normalize_tier_label(answer, allow_recommended=True)
         accepted = tier is not None or (host == "claude" and answer == "确认" and not offered_tiers(question))
     elif pending["tool"] == "ExitPlanMode":
         accepted = response.get("approved") is True
     else:
         question = native_question(pending["input"])
         answer = extract_native_answer(host, question, response)
-        if answer is None and pending["tool"] == "request_user_input_async":
-            return "ENGINE_CONFIRMATION_PENDING：原生单选卡片已展示，等待用户点选；收到用户选择后请重新读取 status 核实。"
-        accepted = answer == APPROVAL_ACCEPT_LABEL and offered_approval(question) and not question.get("multiSelect")
+        accepted = is_approval_accept_label(answer, allow_recommended=True) and offered_approval(question) and not question.get("multiSelect")
     task = load_task(root)
     if not accepted or not matches_confirmation(event, task, pending):
         return "ENGINE_CONFIRMATION_REJECTED：回执未确认或任务/轮次/版本已经变化；" + CONFIRM_HELP
