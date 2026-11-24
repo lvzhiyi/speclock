@@ -554,3 +554,31 @@ class HostGateTests(unittest.TestCase):
         self.assertTrue(host_gate.is_approval_accept_label("批准方案 (Recommended)", allow_recommended=True))
         self.assertEqual(host_gate.parse_chat_confirmation_reply("选轻量档 (Recommended)"), (None, None))
         self.assertEqual(host_gate.parse_chat_confirmation_reply("批准方案 (Recommended)"), (None, None))
+
+    def test_parse_async_question_reply(self):
+        valid_payload = json.dumps(
+            [{"questionItemId": '["request_user_input_async","call_1",0]', "question": "请选择档位", "answer": " 轻量档 "}],
+            ensure_ascii=False,
+        )
+        valid_msg = f"\n<send_user_message_question_reply>\n{valid_payload}\n</send_user_message_question_reply>\n"
+        self.assertEqual(
+            host_gate._parse_async_question_reply(valid_msg),
+            {"call": "call_1", "question": "请选择档位", "answer": "轻量档"},
+        )
+        self.assertIsNone(host_gate._parse_async_question_reply("前置文字 " + valid_msg))
+        self.assertIsNone(host_gate._parse_async_question_reply(valid_msg + " 后置文字"))
+        two_items = "<send_user_message_question_reply>\n" + json.dumps([
+            {"questionItemId": '["request_user_input_async","call_1",0]', "question": "Q1", "answer": "A1"},
+            {"questionItemId": '["request_user_input_async","call_2",0]', "question": "Q2", "answer": "A2"},
+        ]) + "\n</send_user_message_question_reply>"
+        self.assertIsNone(host_gate._parse_async_question_reply(two_items))
+        for bad_id in (
+            '["other_tool","call_1",0]',
+            '["request_user_input_async","",0]',
+            '["request_user_input_async","call_1",1]',
+            'not-json',
+        ):
+            bad_msg = "<send_user_message_question_reply>\n" + json.dumps([
+                {"questionItemId": bad_id, "question": "Q", "answer": "A"}
+            ]) + "\n</send_user_message_question_reply>"
+            self.assertIsNone(host_gate._parse_async_question_reply(bad_msg))

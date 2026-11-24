@@ -43,6 +43,11 @@ HOOK_HEARTBEAT_INTERVAL = 15.0
 CONFIRM_HELP = ("ENGINE_CONFIRMATION_UNSUPPORTED：当前宿主回调没有匹配的用户确认。"
                 "请用 request-confirmation 准备聊天确认，并在 Agent 窗口展示回复选项。"
                 "确认绑定当前任务、轮次、版本及控制摘要。")
+ASYNC_PENDING_MSG = (
+    "ENGINE_CONFIRMATION_PENDING：原生单选弹窗已展示，等待用户点选。"
+    "请调用 clock.sleep（如 30000 毫秒）保持当前回合活跃等待用户点击，不要立刻发送 final_answer 结束回合（结束回合会关闭 Codex 异步弹窗）；"
+    "收到用户点击回执后请重新读取 status 核实。"
+)
 
 
 def project_root(cwd, session_id=None):
@@ -546,12 +551,106 @@ def request_chat_confirmation(root, task, version, session, action, request):
     return dict(pending, replies=replies, **hook_confirmation_status(root, session))
 
 
+def _parse_async_question_reply(prompt):
+    if not isinstance(prompt, str):
+        return None
+    match = re.fullmatch(
+        r"\s*<send_user_message_question_reply>\s*(.*?)\s*</send_user_message_question_reply>\s*",
+        prompt,
+        flags=re.DOTALL,
+    )
+    if not match:
+        return None
+    try:
+        items = json.loads(match.group(1))
+    except ValueError:
+        return None
+    if not isinstance(items, list) or len(items) != 1 or not isinstance(items[0], dict):
+        return None
+    item = items[0]
+    raw_id = item.get("questionItemId")
+    item_id = raw_id
+    if isinstance(raw_id, str):
+        try:
+            item_id = json.loads(raw_id)
+        except ValueError:
+            return None
+    if not (
+        isinstance(item_id, list)
+        and len(item_id) == 3
+        and item_id[0] == "request_user_input_async"
+        and isinstance(item_id[1], str)
+        and item_id[1]
+        and item_id[2] == 0
+    ):
+        return None
+    question = item.get("question")
+    answer = item.get("answer")
+    if not isinstance(question, str) or not isinstance(answer, str) or not answer.strip():
+        return None
+    return {"call": item_id[1], "question": question, "answer": answer.strip()}
+
+
+def _async_question_confirmation(event, root, reply):
+    from workflow_engine.model import EngineError
+
+    session = event.get("session_id")
+    path = pending_path(root, session)
+    if path.is_symlink() or not path.is_file():
+        if "workflow-confirm:" in reply["question"]:
+            return "ENGINE_CONFIRMATION_REJECTED：未找到当前会话的待确认弹窗记录，请重新发起确认。"
+        return None
+    try:
+        pending = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if (
+        not isinstance(pending, dict)
+        or pending.get("host") != "codex"
+        or pending.get("tool") != "request_user_input_async"
+        or pending.get("call") != reply["call"]
+    ):
+        if "workflow-confirm:" in reply["question"]:
+            return "ENGINE_CONFIRMATION_REJECTED：异步弹窗回执与当前待确认调用不匹配，请重新发起确认。"
+        return None
+    expected_marker = "workflow-confirm:" + pending["task"] + ":" + pending["round"] + ":" + pending["digest"] + ":" + pending["action"]
+    markers = re.findall(r"workflow-confirm:[^\s\"<>]+", reply["question"])
+    marker_ok = markers == [expected_marker] and reply["question"].count("workflow-confirm:") == 1
+    question = native_question(pending.get("input") or {})
+    tier = None
+    if pending["action"] == "tier_confirmation":
+        if offered_tiers(question) and not question.get("multiSelect"):
+            tier = normalize_tier_label(reply["answer"], allow_recommended=True)
+        accepted = marker_ok and tier is not None
+    elif pending["action"] == "approval":
+        accepted = (
+            marker_ok
+            and is_approval_accept_label(reply["answer"], allow_recommended=True)
+            and offered_approval(question)
+            and not question.get("multiSelect")
+        )
+    else:
+        accepted = False
+    CURRENT_EVENT.set(event)
+    try:
+        task = load_task(root)
+        if not accepted or not matches_confirmation(event, task, pending):
+            return "ENGINE_CONFIRMATION_REJECTED：回执未确认或任务/轮次/版本已经变化，请重新展示确认选项。"
+        record_confirmation(root, pending, "codex 原生用户流程", tier)
+    except (EngineError, ValueError) as error:
+        return "ENGINE_CONFIRMATION_REJECTED：" + str(error)
+    return "ENGINE_CONFIRMATION_RECORDED：已登记当前任务的" + ("方案批准。" if pending["action"] == "approval" else "档位选择。")
+
+
 def chat_confirmation(event, root):
     """只消费宿主提交的独立用户消息，不解析 Agent 或工具正文。"""
     from workflow_engine.model import EngineError
     prompt, session = event.get("prompt"), event.get("session_id")
     if not isinstance(prompt, str) or not isinstance(session, str) or not session:
         return None
+    async_reply = _parse_async_question_reply(prompt)
+    if async_reply is not None:
+        return _async_question_confirmation(event, root, async_reply)
     action, tier = parse_chat_confirmation_reply(prompt)
     if not action:
         return None
@@ -719,13 +818,6 @@ def prepare_confirmation(event, root):
     host = native_confirmation_host(event)
     if host is None:
         return None
-    tool = event.get("tool_name")
-    if host == "codex" and tool == "request_user_input_async":
-        return (
-            "ENGINE_CONFIRMATION_SYNC_REQUIRED：Codex 定档与方案批准须使用同步阻塞的 request_user_input"
-            "（不要使用 request_user_input_async，异步弹窗会在继续执行工具或输出回复后自动消失）。"
-            "请改用 request_user_input（单选、带非空 id）；若当前会话确实未提供 request_user_input，请改用 request-confirmation 走聊天口令确认。"
-        )
     try:
         task = load_task(root)
         error = binding_error(event, task)
@@ -759,6 +851,9 @@ def prepare_confirmation(event, root):
         pending = dict(confirmation_target(task, action), host=host, tool=tool,
                        call=event["tool_use_id"], input=data, request=request_id)
         save_pending(path, pending, root=root)
+        if tool == "request_user_input_async":
+            save_pending(pending_path(root, event.get("session_id"), "chat:"),
+                         dict(confirmation_target(task, action), request=request_id), root=root)
         return None
     except Exception as exc:
         return "ENGINE_CONFIRMATION_REQUIRED：" + str(exc) + "；" + CONFIRM_HELP
@@ -786,17 +881,23 @@ def complete_confirmation(event):
         try:
             response = json.loads(response)
         except ValueError:
+            if pending["tool"] == "request_user_input_async":
+                return ASYNC_PENDING_MSG
             return CONFIRM_HELP
     if (pending.get("host") != host or pending["call"] != event.get("tool_use_id") or
             pending["tool"] != event.get("tool_name") or pending["input"] != event.get("tool_input") or
             (isinstance(response, dict) and (response.get("error") or response.get("is_error")))):
         return CONFIRM_HELP
     if not isinstance(response, dict):
+        if pending["tool"] == "request_user_input_async":
+            return ASYNC_PENDING_MSG
         return CONFIRM_HELP
     tier = None
     if pending["action"] == "tier_confirmation":
         question = native_question(pending["input"])
         answer = extract_native_answer(host, question, response)
+        if answer is None and pending["tool"] == "request_user_input_async":
+            return ASYNC_PENDING_MSG
         if answer is not None and offered_tiers(question) and not question.get("multiSelect"):
             tier = normalize_tier_label(answer, allow_recommended=True)
         accepted = tier is not None or (host == "claude" and answer == "确认" and not offered_tiers(question))
@@ -805,6 +906,8 @@ def complete_confirmation(event):
     else:
         question = native_question(pending["input"])
         answer = extract_native_answer(host, question, response)
+        if answer is None and pending["tool"] == "request_user_input_async":
+            return ASYNC_PENDING_MSG
         accepted = is_approval_accept_label(answer, allow_recommended=True) and offered_approval(question) and not question.get("multiSelect")
     task = load_task(root)
     if not accepted or not matches_confirmation(event, task, pending):

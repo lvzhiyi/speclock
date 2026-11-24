@@ -176,10 +176,14 @@ class GateTests(unittest.TestCase):
                 self.assertIn("REJECTED", self.hook("PostToolUse", host, **event, tool_response=accept_answer).stdout)
                 self.assertEqual(engine.status(task_id)["version"], approved["version"])
 
-    def test_codex_async_confirm_denied_and_sync_recommended_suffix(self):
+    def test_codex_async_question_reply_and_sync_recommended_suffix(self):
         from workflow_engine.engine import Engine
         from workflow_engine_cli import default_db
         from unittest.mock import patch
+
+        def wrap_reply(call_id, question, answer):
+            payload = [{"questionItemId": json.dumps(["request_user_input_async", call_id, 0]), "question": question, "answer": answer}]
+            return "<send_user_message_question_reply>\n" + json.dumps(payload, ensure_ascii=False) + "\n</send_user_message_question_reply>\n"
 
         subprocess.run(["git", "init", "-q", str(self.project)], check=True)
         with patch.dict(os.environ, {"WORKFLOW_ENGINE_HOME": self.tmp.name}):
@@ -191,23 +195,63 @@ class GateTests(unittest.TestCase):
         session = "session-async-codex"
         task = engine.bind_executor("T-ASYNC", task["version"], "async-bind", "agent", session)
 
-        # 0. 无 workflow-confirm 标记的普通异步提问必须放行。
+        # 0. 无 workflow-confirm 标记的普通异步提问与回执必须放行/忽略。
         plain_event = dict(session_id=session, tool_name="request_user_input_async", tool_input={"questions": [{"title": "补充背景？", "options": ["是", "否"]}]}, tool_use_id="call-plain-async")
         self.assertEqual(self.hook("PreToolUse", "codex", **plain_event).stdout, "")
+        self.assertEqual(self.hook("UserPromptSubmit", "codex", session_id=session, prompt=wrap_reply("call-plain-async", "补充背景？", "是")).stdout, "")
+        self.assertEqual(engine.status("T-ASYNC")["version"], task["version"])
 
-        # 1. 携带 workflow-confirm 的 request_user_input_async 在定档和方案批准场景下都必须被拦截。
+        # 1. request_user_input_async 定档：PostToolUse 返回等待与 clock.sleep 指引，UserPromptSubmit 消费 <send_user_message_question_reply>。
         tier_marker = f"workflow-confirm:T-ASYNC:{task['current_round']}:{task['control_digest']}:tier_confirmation"
-        async_tier_input = {"questions": [{"title": f"请选择档位。 {tier_marker} ", "options": ["轻量档", "标准档", "完整档"]}]}
-        async_tier_res = json.loads(self.hook("PreToolUse", "codex", session_id=session, tool_name="request_user_input_async", tool_input=async_tier_input, tool_use_id="call-async-tier").stdout)["hookSpecificOutput"]
-        self.assertEqual(async_tier_res["permissionDecision"], "deny")
-        self.assertIn("ENGINE_CONFIRMATION_SYNC_REQUIRED", async_tier_res["permissionDecisionReason"])
+        tier_title = f"请选择档位。 {tier_marker} "
+        async_tier_input = {"questions": [{"title": tier_title, "options": ["完整档 (Recommended)", "标准档", "轻量档"]}]}
+        async_tier_event = dict(session_id=session, tool_name="request_user_input_async", tool_input=async_tier_input, tool_use_id="call-async-tier")
+        self.assertEqual(self.hook("PreToolUse", "codex", **async_tier_event).stdout, "")
+        pending_out = self.hook("PostToolUse", "codex", **async_tier_event, tool_response={"accepted": True}).stdout
+        self.assertIn("ENGINE_CONFIRMATION_PENDING", pending_out)
+        self.assertIn("clock.sleep", pending_out)
 
-        # 2. 同步阻塞的 request_user_input 兼容 (Recommended) 后缀并完成定档。
+        # 错误 call_id 的回执必须被拒绝且不入库。
+        bad_call_res = self.hook("UserPromptSubmit", "codex", session_id=session, prompt=wrap_reply("call-wrong", tier_title, "完整档 (Recommended)")).stdout
+        self.assertIn("ENGINE_CONFIRMATION_REJECTED", bad_call_res)
+        self.assertEqual(engine.status("T-ASYNC")["version"], task["version"])
+
+        # 合法 call_id + 含标记 question + 推荐后缀选项成功登记。
+        good_tier_res = self.hook("UserPromptSubmit", "codex", session_id=session, prompt=wrap_reply("call-async-tier", tier_title.strip(), "完整档 (Recommended)")).stdout
+        self.assertIn("ENGINE_CONFIRMATION_RECORDED", good_tier_res)
+        selected = engine.status("T-ASYNC")
+        self.assertEqual(selected["tier"], "full")
+        self.assertNotIn("tier_confirmation", selected["missing"])
+        self.assertIn("approval", selected["missing"])
+
+        # 重放同一 call_id 回执必须被拒绝。
+        self.assertIn("ENGINE_CONFIRMATION_REJECTED", self.hook("UserPromptSubmit", "codex", session_id=session, prompt=wrap_reply("call-async-tier", tier_title.strip(), "完整档 (Recommended)")).stdout)
+
+        # 2. request_user_input_async 方案批准：选不批准项被拒，选「批准方案（推荐）」入库。
+        app_marker = f"workflow-confirm:T-ASYNC:{selected['current_round']}:{selected['control_digest']}:approval"
+        app_title = f"请审批方案 {app_marker}"
+        async_app_input = {"questions": [{"title": app_title, "options": ["批准方案（推荐）", "需要修改"]}]}
+        async_app_event = dict(session_id=session, tool_name="request_user_input_async", tool_input=async_app_input, tool_use_id="call-async-app")
+        self.assertEqual(self.hook("PreToolUse", "codex", **async_app_event).stdout, "")
+        app_pending_out = self.hook("PostToolUse", "codex", **async_app_event, tool_response={"accepted": True}).stdout
+        self.assertIn("ENGINE_CONFIRMATION_PENDING", app_pending_out)
+        self.assertIn("clock.sleep", app_pending_out)
+
+        self.assertIn("ENGINE_CONFIRMATION_REJECTED", self.hook("UserPromptSubmit", "codex", session_id=session, prompt=wrap_reply("call-async-app", app_title, "需要修改")).stdout)
+        self.assertIn("approval", engine.status("T-ASYNC")["missing"])
+        self.assertIn("ENGINE_CONFIRMATION_RECORDED", self.hook("UserPromptSubmit", "codex", session_id=session, prompt=wrap_reply("call-async-app", app_title, "批准方案（推荐）")).stdout)
+        self.assertNotIn("approval", engine.status("T-ASYNC")["missing"])
+
+        # 3. 同步阻塞的 request_user_input 同样兼容 (Recommended) / （推荐） 后缀。
+        sync_session = "session-sync-codex"
+        sync_task = engine.create("T-SYNC", "light", ["A"], plan, "sync-create", details=details)
+        sync_task = engine.bind_executor("T-SYNC", sync_task["version"], "sync-bind", "agent", sync_session)
+        sync_tier_marker = f"workflow-confirm:T-SYNC:{sync_task['current_round']}:{sync_task['control_digest']}:tier_confirmation"
         sync_tier_input = {
             "questions": [{
                 "id": "tier",
                 "header": "档位",
-                "question": f"请选择档位。 {tier_marker} ",
+                "question": f"请选择档位。 {sync_tier_marker} ",
                 "options": [
                     {"label": "完整档 (Recommended)", "description": "全量方案与审批"},
                     {"label": "标准档", "description": "短计划"},
@@ -215,37 +259,28 @@ class GateTests(unittest.TestCase):
                 ],
             }]
         }
-        tier_event = dict(session_id=session, tool_name="request_user_input", tool_input=sync_tier_input, tool_use_id="call-sync-tier")
+        tier_event = dict(session_id=sync_session, tool_name="request_user_input", tool_input=sync_tier_input, tool_use_id="call-sync-tier")
         self.assertEqual(self.hook("PreToolUse", "codex", **tier_event).stdout, "")
         self.assertIn("ENGINE_CONFIRMATION_RECORDED", self.hook("PostToolUse", "codex", **tier_event, tool_response={"answers": {"tier": {"answers": ["完整档 (Recommended)"]}}}).stdout)
-        selected = engine.status("T-ASYNC")
-        self.assertEqual(selected["tier"], "full")
-        self.assertNotIn("tier_confirmation", selected["missing"])
-        self.assertIn("approval", selected["missing"])
+        sync_selected = engine.status("T-SYNC")
+        self.assertEqual(sync_selected["tier"], "full")
 
-        # 3. 方案批准：异步调用被拒，同步 request_user_input 兼容「批准方案（推荐）」后缀。
-        app_marker = f"workflow-confirm:T-ASYNC:{selected['current_round']}:{selected['control_digest']}:approval"
-        async_app_input = {"questions": [{"title": f"请审批方案 {app_marker}", "options": ["批准方案", "需要修改"]}]}
-        async_app_res = json.loads(self.hook("PreToolUse", "codex", session_id=session, tool_name="request_user_input_async", tool_input=async_app_input, tool_use_id="call-async-app").stdout)["hookSpecificOutput"]
-        self.assertEqual(async_app_res["permissionDecision"], "deny")
-        self.assertIn("ENGINE_CONFIRMATION_SYNC_REQUIRED", async_app_res["permissionDecisionReason"])
-
+        sync_app_marker = f"workflow-confirm:T-SYNC:{sync_selected['current_round']}:{sync_selected['control_digest']}:approval"
         sync_app_input = {
             "questions": [{
                 "id": "approval",
                 "header": "审批",
-                "question": f"请审批方案 {app_marker}",
+                "question": f"请审批方案 {sync_app_marker}",
                 "options": [
                     {"label": "批准方案（推荐）", "description": "按方案实施"},
                     {"label": "需要修改", "description": "退回调整"},
                 ],
             }]
         }
-        app_event = dict(session_id=session, tool_name="request_user_input", tool_input=sync_app_input, tool_use_id="call-sync-app")
+        app_event = dict(session_id=sync_session, tool_name="request_user_input", tool_input=sync_app_input, tool_use_id="call-sync-app")
         self.assertEqual(self.hook("PreToolUse", "codex", **app_event).stdout, "")
         self.assertIn("ENGINE_CONFIRMATION_RECORDED", self.hook("PostToolUse", "codex", **app_event, tool_response=json.dumps({"answers": {"approval": {"answers": ["批准方案（推荐）"]}}}, ensure_ascii=False)).stdout)
-        approved = engine.status("T-ASYNC")
-        self.assertNotIn("approval", approved["missing"])
+        self.assertNotIn("approval", engine.status("T-SYNC")["missing"])
 
     def test_manifests_install_synchronous_wildcard_gate(self):
         for filename in ("hooks.json", "codex.json"):
