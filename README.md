@@ -1,125 +1,61 @@
-https://github.com/user-attachments/assets/6c399680-073c-4bd3-8bb2-d61fae7f9972
 # SpecLock
 
-**English** | [简体中文](README.zh-CN.md)
+**English** | [简体中文](README.zh-CN.md) · [Demo video](https://github.com/user-attachments/assets/6c399680-073c-4bd3-8bb2-d61fae7f9972) · [v0.28.7](docs/development/release-0.28.7.md)
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Python 3.9+ stdlib only](https://img.shields.io/badge/Dependencies-Python%203.9%2B%20stdlib%20only-brightgreen.svg)](#architecture)
-[![Hosts: Claude Code | Codex | Cursor](https://img.shields.io/badge/Hosts-Claude%20Code%20%7C%20Codex%20%7C%20Cursor-purple.svg)](#installation)
-[![Release](https://img.shields.io/badge/workflow--core-v0.28.7-orange.svg)](docs/development/release-0.28.7.md)
+**Your coding agent says the tests passed. SpecLock requires the results before it accepts a review.**
 
-**Lock your specs before your agent writes a single line of code. Hard-enforced AI engineering workflow for Claude Code, Codex, and Cursor.**
+SpecLock is a task workflow plugin for **Codex, Claude Code, and Cursor**. It checks that the agent reads your project standards before editing, runs the required checks on the current code, and leaves final acceptance to you.
 
-> **Superpowers teaches AI discipline with prompts. SpecLock enforces it with Hooks + a SQLite state machine + SHA-256 baseline receipts.**
-> Your agent literally *cannot* edit code before reading your required standards in full, *cannot* bypass tier approval, and *cannot* claim tests passed without running real commands against the current workspace snapshot.
+## Quick start: run `AUTH-R03`
 
----
+Try adding token expiry and revocation in an example project, without touching your own code.
 
-## Why SpecLock?
+> The new example is not yet on public `main`. If you already have a clean copy of `examples/speclock-codex-test` with `AUTH-R03` pending, you can use it now.
 
-Prompt-only skill packs work great on short sessions — until context grows long and the agent silently skips reading your architecture rules, edits code before you approve scope, or claims *"tests pass"* after running nothing.
+1. [Install `workflow-core` in Codex](#codex), then open the example as its own Git workspace. It is already configured; skip `init`.
+2. Start a new Codex session, trust and enable the SpecLock hooks in `/hooks` or **Settings → Hooks**, then send:
 
-SpecLock turns engineering discipline into **deterministic, auditable code-level guardrails** with **zero third-party dependencies** (pure Python standard library + SQLite):
+   ```text
+   $workflow-core:workflow Run AUTH-R03
+   ```
 
-- **Anti-Skip Baseline Receipts (SHA-256)**: Before code edits unlock, the agent must read every `baseline.required` / `baseline.scoped` doc in full; truncated reads (`BASELINE_BATCH_LIMIT`) or modified files invalidate the receipt automatically.
-- **Human Tiering & Proposal Gate**: Every task is explicitly tiered by risk (**Light / Standard / Full**). Full-tier work (auth, security, migrations, breaking contracts) requires separate proposal & design approval bound to a `control_digest`.
-- **Real Verification Snapshots**: `run` executes real command `argv` arrays (no shell injection), captures exit codes, and binds results to a cryptographic Git workspace snapshot — any subsequent edit marks stale evidence `stale`.
-- **Dual-Axis Review (`Spec` + `Standards`)**: Every tier undergoes structured Spec compliance and Standards review with stable finding IDs that cannot be silently dropped on retry.
-- **Streamlined 5-Step CLI Loop**: `prepare` → `begin` → `finish-step --finish-implementation` → `run` → `review` — auto-derives baselines & checks from `ai-workflow.yaml` and returns inline `progress` projections, keeping friction low without weakening a single gate.
-- **Self-Contained Doc Checks & Archiving**: Vendor a zero-dependency single-file `scripts/check_docs.py` directly into any repo (no local symlinks, no plugin cache dependency, works in any CI/sandbox), and archive completed changes with `/workflow-core:archive`.
+3. Confirm the **Full** tier and approve the proposal after reviewing it. Once the required checks and review pass, the task card will say **评审通过，待人工验收** (review passed, awaiting human acceptance).
 
----
+<details>
+<summary>Set up a clean example workspace once it is available on main</summary>
 
-## SpecLock vs. Superpowers
+Run in a shell with Git, `tar`, and Python 3.9+ available. Use a fresh folder: the example expects a `develop` review baseline.
 
-[Superpowers](https://github.com/obra/superpowers) is an awesome prompt-based engineering methodology pack. **SpecLock is not a hostile replacement — it is a stronger governance layer designed for real team repositories**, and works great *alongside* Superpowers (in fact, our Flutter preset bundles `superpowers` directly).
+```bash
+git clone https://github.com/lvzhiyi/speclock.git &&
+  demo=$(mktemp -d "${TMPDIR:-/tmp}/speclock-demo.XXXXXX") &&
+  git -C speclock archive HEAD:examples/speclock-codex-test > "$demo/example.tar" &&
+  tar -xf "$demo/example.tar" -C "$demo" &&
+  rm "$demo/example.tar" &&
+  git -C "$demo" init -b develop &&
+  git -C "$demo" add . &&
+  git -C "$demo" -c user.name='SpecLock Demo' -c user.email=demo@example.invalid commit -m 'Example baseline' &&
+  printf 'Open in Codex: %s\n' "$demo"
+```
 
-| Dimension | Superpowers (Prompt Methodology) | SpecLock (`v0.28.7`) |
+</details>
+
+## How it works
+
+| Stage | You | Agent / SpecLock |
 | --- | --- | --- |
-| **Enforcement Mechanism** | Soft prompt discipline — agents can drift, skip reading specs, or fake verification on long threads | **Hooks + SQLite State Machine + SHA-256 Receipts** — blocks writes until baselines are read, tier is confirmed, and real checks match the current snapshot |
-| **Risk Tiering & TDD** | Strict TDD everywhere (can feel rigid on UI, copy, or doc tasks) | **3 Risk Tiers (Light / Standard / Full)** + pragmatic TDD-first (opt-out requires recorded reason & alternative validation) |
-| **Team & External Workflow** | Single-repo coding methodology | End-to-end delivery: PRD breakdown, 7-field lean task cards with auto write-back, `[x]` vs. non-terminal status hard-check, design/API plugins, change archiving |
-| **Portability & Efficiency** | Zero-config & fast | **Zero-dependency single-file doc checker** (`vendor_check_docs.py`) for any CI/sandbox + streamlined 5-step CLI (`prepare` / `begin`) |
-| **Observability & Evolution** | Chat transcripts / static notes | Built-in read-only **Dashboard**, round/attempt audit trail, cross-session **Handoff**, and **Metrics** rule-effectiveness analytics |
+| **Start** | Give a task ID or describe the goal and acceptance criteria. | Finds the task and asks about missing decisions. |
+| **Approve** | Confirm the scope and tier. Review and approve the proposal separately for Full tasks. | Checks approvals and records that the required standards were read before implementation. |
+| **Verify and review** | Step in only if a decision or prerequisite is missing. | Runs the required checks against the current code, then reviews against both the spec and project standards. Missing or stale verification blocks review. |
+| **Accept** | Check the result and decide whether to accept it. | Hands over the evidence and any gaps. Review does not mark the task accepted. |
 
-**Best-of-both-worlds setup**: Run SpecLock as your repository's hard guardrail backbone, and invoke Superpowers' `brainstorming` or `systematic-debugging` whenever you need open-ended architecture exploration or deep root-cause debugging.
+**Light** for small edits · **Standard** for scoped features and fixes · **Full** for higher-risk work, such as auth or breaking contracts. All tiers require human scope and tier confirmation, baseline reading, verification, and both review checks.
 
----
-
-## 30-Second Quick Try (Zero Risk, Sandbox Included)
-
-Try the self-contained doc checker and the full 5-step `prepare → begin → finish-step → run → review` engine locally without touching your own repositories:
-
-```bash
-git clone https://github.com/lvzhiyi/speclock.git
-cd speclock
-
-# 1. Run doc & card consistency checks on the bundled sandbox project
-python3 examples/workflow-sandbox/scripts/check.py docs
-
-# 2. Run the end-to-end streamlined engine CLI tests (verifies hard gates + baseline SHA-256)
-python3 -m unittest discover -s plugins/workflow-core/scripts/tests_engine -p 'test_cli.py'
-```
-
----
-
-## Architecture
-
-SpecLock is **100% stack-agnostic** at its core (`workflow-core`) and cleanly separates project facts from reusable plugins:
-
-```mermaid
-flowchart TB
-    subgraph PROJ["Your Project Repository (Project Facts Only)"]
-        P1["ai-workflow.yaml<br/>baselines, verify cmds, paths"]
-        P2["docs/development/standards.md<br/>(or split coding/arch/testing docs)"]
-        P3["scripts/check_docs.py<br/>(vendored zero-dep single file)"]
-    end
-    subgraph DIM["Optional Dimension Plugins (Mix & Match)"]
-        S["stack-*<br/>flutter / (ts, python, go PRs welcome!)"]
-        D["design-*<br/>pixso / (figma PRs welcome!)"]
-        A["api-*<br/>apifox / ..."]
-    end
-    C["workflow-core<br/>SQLite Engine · Hooks · Skills · Dashboard · Metrics"]
-    PROJ -->|overrides| DIM
-    DIM -->|fills stack commands & tools| C
-```
-
-### Streamlined 5-Step Task Lifecycle
-
-```bash
-# 1. Create task (auto-derives baselines & check plan from ai-workflow.yaml), bind session & request tier
-we prepare --task T1 --tier 标准 --acceptance "A1" --details-json '{...}' --executor agent --session S1 --request-tier
-
-# 2. After human confirms tier (and approves proposal on Full tier):
-#    Atomically output full baseline docs, record SHA-256 receipts, start implementing & record TDD
-we begin --task T1 --executor agent --session S1 --tdd-json '{"adopted":true}'
-
-# 3. Finish implementation step(s) (inline progress projection returned automatically)
-we finish-step --task T1 --version V --step s1 --summary "Implemented fix" --finish-implementation
-
-# 4. Run real verification commands against Git snapshot + submit dual-axis review
-we run --task T1 --version V2
-we review --task T1 --version V3 --file-json '{...}'
-```
-
-All granular atomic commands (`create`, `bind-executor`, `read-baseline`, `start`, `record-tdd`, `finish-implementation`, `repair`, `return-task`, `sync-review-card`) remain fully supported for batched reads, idempotent retries, and recovery. See [Engine Protocol v2](docs/development/workflow-engine.md) for full specs.
-
----
+Send `$workflow-core:dashboard on` in Codex and open the returned local URL to see progress, verification results, and review evidence on the **read-only** dashboard.
 
 ## Installation
 
-### Claude Code
-
-```bash
-claude plugin marketplace add lvzhiyi/speclock
-claude plugin install workflow-core@speclock
-```
-
-For Flutter + Pixso + Apifox projects (optional all-in-one preset):
-```bash
-claude plugin marketplace add flutter/agent-plugins
-claude plugin install preset-flutter-pixso-apifox@speclock
-```
+Use Python 3.9+ and Git. Start with `workflow-core`; extra plugins are optional.
 
 ### Codex
 
@@ -128,81 +64,30 @@ codex plugin marketplace add lvzhiyi/speclock --ref main
 codex plugin add workflow-core@speclock
 ```
 
-Open your project, start a new session, trust hooks in `/hooks` (or **Settings → Hooks**), and run `$workflow-core:init`. Task state is stored in `<project>/.speclock/` (auto-ignored by `.speclock/.gitignore`), so Codex's default `workspace-write` sandbox works out of the box with zero extra allowlist configuration (existing `~/.codex/workflow-engine/` databases are auto-migrated read-only on first CLI/hook use).
+After installation or an update, trust and enable the plugin's hooks in `/hooks` or **Settings → Hooks** and start a new session. If confirmations are not recorded, check hook trust before retrying; see [tier selection and approval](plugins/workflow-core/skills/workflow/SKILL.md#在-agent-窗口定档).
+
+### Claude Code
+
+```bash
+claude plugin marketplace add lvzhiyi/speclock
+claude plugin install workflow-core@speclock
+```
 
 ### Cursor
 
-`workflow-core` ships native Cursor plugin metadata (`.cursor-plugin/plugin.json`) and hooks (`hooks/cursor.json`). Add this repo as a marketplace or load `plugins/workflow-core` locally. See [Cursor Adapter Guide](docs/development/cursor-adapter.md) for details.
+Add this repo as a marketplace and select `workflow-core`, or load `plugins/workflow-core` locally. See the [Cursor adapter guide](docs/development/cursor-adapter.md#安装与检查).
 
----
+**Scope:** Hooks apply only to the tool paths the host actually routes through enabled callbacks. SpecLock is not a security sandbox. Integration tests do not replace a full test in a real client session.
 
-## Daily Skills Cheat Sheet
+## Use it in your project
 
-| Goal | Claude Code | Codex |
-| --- | --- | --- |
-| Initialize `ai-workflow.yaml` & lean doc skeleton (`standards.md` ≤200 lines) | `/workflow-core:init` | `$workflow-core:init` |
-| Start or resume any task through the guarded workflow | `/workflow-core:workflow` | `$workflow-core:workflow` |
-| Break down a PRD into lean 7-field module task cards | `/workflow-core:prd-breakdown` | `$workflow-core:prd-breakdown` |
-| Narrow down complex multi-cause or cross-layer bugs | `/workflow-core:debug` | `$workflow-core:debug` |
-| Run Spec + Standards dual-axis review & auto-update task card | `/workflow-core:review` | `$workflow-core:review` |
-| Archive merged change folders & verify zero broken links | `/workflow-core:archive` | `$workflow-core:archive` |
-| Save or restore cross-session handoff snapshots | `/workflow-core:handoff` | `$workflow-core:handoff` |
-| Open read-only task progress & evidence dashboard | `/workflow-core:dashboard` | `$workflow-core:dashboard` |
-| Inspect rule effectiveness & trigger metrics | `/workflow-core:metrics` | `$workflow-core:metrics` |
+1. Run `workflow-core:init` once per project (Codex: `$workflow-core:init`; Claude Code: `/workflow-core:init`). Review the proposed `ai-workflow.yaml`, required standards, and check commands.
+2. Use `workflow-core:workflow` with a task ID or a short request. For a full PRD, use [`prd-breakdown`](plugins/workflow-core/skills/prd-breakdown/SKILL.md) first.
+3. For an interrupted task, give the next session its task ID and [handoff notes](plugins/workflow-core/skills/handoff/SKILL.md), if available.
 
-### Vendor a Zero-Dependency Doc Checker Into Any Repo
+## More
 
-Keep CI and sandboxed agents completely independent of local plugin paths:
-
-```bash
-python3 plugins/workflow-core/scripts/vendor_check_docs.py --output /path/to/your-repo/scripts/check_docs.py
-python3 /path/to/your-repo/scripts/check_docs.py --root /path/to/your-repo --check-config
-```
-
----
-
-## Built-in Plugins & Community Roadmap
-
-| Plugin | Dimension | Status |
-| --- | --- | --- |
-| `workflow-core` | Core engine, hooks, skills, dashboard, metrics, archiving | Production (`v0.28.7`, stack-agnostic) |
-| `stack-flutter` | Flutter checks, Stop hook analyzer, platform rules | Included |
-| `design-pixso` | Pixso MCP integration & visual node verification | Included |
-| `api-apifox` | Apifox contract queries & write-authorization guardrails | Included |
-| `preset-flutter-pixso-apifox` | Bundle for Flutter + Pixso + Apifox (+ Context7 & Superpowers) | Included |
-
-**Contributions Welcome!** Great first plugins to add:
-- `stack-typescript` / `stack-nextjs` (`tsc --noEmit` + `eslint` Stop hook)
-- `stack-python` (`ruff` + `pytest` Stop hook)
-- `stack-go` (`go vet` + `go test`)
-- `design-figma` (Figma MCP node verification)
-
----
-
-## Documentation & Release Notes
-
-- [中文完整文档（Full Chinese Documentation）](README.zh-CN.md)
-- [Engine Protocol v2](docs/development/workflow-engine.md)
-- [Cursor Adapter Guide](docs/development/cursor-adapter.md)
-- [Release Notes: v0.28.7](docs/development/release-0.28.7.md)
-- [Release Notes: v0.28.6](docs/development/release-0.28.6.md)
-- [Release Notes: v0.28.5](docs/development/release-0.28.5.md)
-- [Release Notes: v0.28.4](docs/development/release-0.28.4.md)
-- [Release Notes: v0.28.3](docs/development/release-0.28.3.md)
-- [Release Notes: v0.28.2](docs/development/release-0.28.2.md)
-- [Release Notes: v0.28.1](docs/development/release-0.28.1.md)
-- [Release Notes: v0.28.0](docs/development/release-0.28.0.md)
-- [Release Notes: v0.27.1](docs/development/release-0.27.1.md)
-- [Release Notes: v0.27.0](docs/development/release-0.27.0.md)
-- [Release Notes: v0.26.1](docs/development/release-0.26.1.md)
-- [Release Notes: v0.26.0](docs/development/release-0.26.0.md)
-- [Release Notes: v0.25.2](docs/development/release-0.25.2.md)
-- [Release Notes: v0.25.1](docs/development/release-0.25.1.md)
-- [Release Notes: v0.25.0](docs/development/release-0.25.0.md)
-- [Release Notes: v0.24.0](docs/development/release-0.24.0.md)
-- [Release Notes: v0.23.1](docs/development/release-0.23.1.md)
-- [Release Notes: v0.23.0](docs/development/release-0.23.0.md)
-- [Release Notes: v0.22.1](docs/development/release-0.22.1.md)
-- [Release Notes: v0.22.0](docs/development/release-0.22.0.md)
-- [Release Notes: v0.21.0](docs/development/release-0.21.0.md)
-- [License (MIT)](LICENSE)
+- **Workflow reference:** [Workflow skill](plugins/workflow-core/skills/workflow/SKILL.md#任务路径) · [Handling failed checks](plugins/workflow-core/skills/verify/SKILL.md#失败处理顺序) · [Engine protocol and CLI](docs/development/workflow-engine.md#cli-示例)
+- **Project tools:** [Read-only dashboard](plugins/workflow-core/skills/dashboard/SKILL.md) · [Local metrics](plugins/workflow-core/skills/metrics/SKILL.md) · [Standalone doc checker](plugins/workflow-core/scripts/vendor_check_docs.py)
+- **Optional plugins:** [`stack-flutter`](plugins/stack-flutter), [`design-pixso`](plugins/design-pixso), and [`api-apifox`](plugins/api-apifox). Claude Code can install the [combined preset](README.zh-CN.md#可选插件). You can also use SpecLock alongside [Superpowers](https://github.com/obra/superpowers).
+- **Project links:** [Issues](https://github.com/lvzhiyi/speclock/issues) · [Release notes](docs/development/release-0.28.7.md) · [MIT License](LICENSE)
