@@ -80,11 +80,13 @@ WORKFLOW_HOST=codex python3 "${CLAUDE_PLUGIN_ROOT}/scripts/workflow_engine_cli.p
 
 示例使用 Codex。在 Cursor 或 Claude Code 中用 `WORKFLOW_HOST=cursor` 或 `WORKFLOW_HOST=claude`，脚本路径使用实际插件根。CLI 仅准备请求并探测当前会话 Hook 活跃状态，确认由宿主收到用户消息后记录。回复后重新读 `status`。任务版本、轮次或绑定发生变化时，重新登记并展示确认选项。若选中的档位需要补齐步骤、方案或验证计划，先补齐缺项。
 
-完整档按 `tiering` 在会话中展示提案、技术设计和实施步骤，再单独批准。发起批准前同样须确认 `hooks.hook_active` 为 `true`（为 `false` 时禁止调用原生单选工具，必须先写明宿主授权与重启会话步骤，再附终端 `approve-proposal` 备选），确认钩子活跃后**优先使用宿主原生点选**：
-- Claude Code 可用 `ExitPlanMode`（在计划中包含 `workflow-confirm:<任务ID>:<轮次ID>:<control_digest>:approval`），或用 `AskUserQuestion` 的单个 `multiSelect: false` 问题。
-- Codex 优先调用 `request_user_input`（带非空 `id`）或 `request_user_input_async`（`title` + 字符串 `options`）；使用 `request_user_input_async` 时同样须调用 `clock.sleep`（如 `30000` 毫秒）保持回合等待点击，不要立即发送 `final_answer` 结束回合，收到回执后用 `status` 核实是否落库。
-- 使用 `AskUserQuestion`、`request_user_input` 或 `request_user_input_async` 发起方案批准时，问题正文（`question` 或 `title`）须包含 `workflow-confirm:<任务ID>:<轮次ID>:<control_digest>:approval`（前后用空白隔开），并提供至少两个不重复选项：标签 `批准方案`（兼容 `(Recommended)` / `（推荐）` 后缀）及至少一个不批准选项（如 `需要修改`）。仅当用户选中 `批准方案` 时才会落库批准。
-- 仅当当前会话缺少原生点选工具（如 Cursor，或 Codex/Claude Code 未暴露对应工具）或异步弹窗点击未被自动登记时，才降级使用上面的 `request-confirmation` 命令并改为 `--kind approval`，先核对 `confirmation.hook_active` 后再以纯文本 `批准方案` 引导用户单独回复（钩子亦兼容常见成对 Markdown/引号包裹）。准备批准前使用最新版本，登记成功后以 `status` 为准。终端 `confirm-tier` 和 `approve-proposal` 保留给显式选择 CLI 的用户；终端交互确认会自动在状态目录 `reviews/` 下生成并弹出 Markdown 审阅稿（确认后输出简洁回执，支持 `--no-open`/`--json`），也可随时运行 `render-md --task <任务ID> [--open]` 导出只读审阅稿。
+完整档按 `tiering` 在会话中完整展示提案、技术设计、实施步骤与验证计划，再单独批准。发起批准前须先确认 `hooks.hook_active` 为 `true`（为 `false` 时禁止调用原生单选工具，必须先写明宿主授权与重启会话步骤，再附终端 `approve-proposal` 备选），确认钩子活跃后：
+- **强制前置步骤（原生点选批准前必做）**：先运行 `render-md --task "任务ID" --save` 导出当前版本的只读审阅稿到 `.speclock/reviews/`（仅保存文件，不弹出外部窗口；未运行或版本/摘要变化后未重新导出时，`PreToolUse` 会以 `ENGINE_APPROVAL_REVIEW_REQUIRED` 拒绝发起批准卡片）。接着在发起批准卡片的**同一条或紧邻上一条聊天回复正文**中，把已登记的完整方案（方案目标、技术设计 `design`、方案范围/非目标、影响、风险与边界、回滚方案、验收标准、仓库 `scope`、实施步骤、验证命令与审阅稿路径）完整展开给用户审阅，**严禁仅写一两句概括就弹出「批准方案」**。
+- **优先使用宿主原生点选**：
+  - Claude Code 可用 `ExitPlanMode`（在计划中包含 `workflow-confirm:<任务ID>:<轮次ID>:<control_digest>:approval`），或用 `AskUserQuestion` 的单个 `multiSelect: false` 问题。
+  - Codex 优先调用 `request_user_input`（带非空 `id`）或 `request_user_input_async`（`title` + 字符串 `options`）；使用 `request_user_input_async` 时同样须调用 `clock.sleep`（如 `30000` 毫秒）保持回合等待点击，不要立即发送 `final_answer` 结束回合，收到回执后用 `status` 核实是否落库。
+  - 使用 `AskUserQuestion`、`request_user_input` 或 `request_user_input_async` 发起方案批准时，问题正文（`question` 或 `title`）须说明审阅稿路径并包含 `workflow-confirm:<任务ID>:<轮次ID>:<control_digest>:approval`（前后用空白隔开），同时提供至少两个不重复选项：标签 `批准方案`（兼容 `(Recommended)` / `（推荐）` 后缀）及至少一个不批准选项（如 `需要修改`）。仅当用户选中 `批准方案` 时才会落库批准。
+- **降级聊天回复**：仅当当前会话缺少原生点选工具（如 Cursor，或 Codex/Claude Code 未暴露对应工具）或异步弹窗点击未被自动登记时，才降级使用上面的 `request-confirmation` 命令并改为 `--kind approval`（该命令会自动生成审阅稿并在返回中内联 `review_path` / `review_display_path` / `review_markdown`，不弹外部窗口）；先核对 `confirmation.hook_active` 为 `true`，并在聊天正文中完整展示 `review_markdown` 与审阅稿路径，再以纯文本 `批准方案` 引导用户单独回复（钩子亦兼容常见成对 Markdown/引号包裹）。准备批准前使用最新版本，登记成功后以 `status` 为准。终端 `confirm-tier` 和 `approve-proposal` 保留给显式选择 CLI 的用户；终端交互确认会自动在状态目录 `reviews/` 下生成并弹出 Markdown 审阅稿（确认后输出简洁回执，支持 `--no-open`/`--json`），也可随时运行 `render-md --task <任务ID> [--open]` 导出只读审阅稿。
 
 人工确认仅为流程证据，不是可信签署；TTY、actor 或模型自报不提供抗程序代答、同账号防篡改或完整写入路径覆盖。插件不是安全沙箱。
 

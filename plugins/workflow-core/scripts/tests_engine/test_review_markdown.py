@@ -40,6 +40,7 @@ def _full_details():
             'goal': '消除三端重复空态实现',
             'design': '抽离 CommonEmptyState 组件，按类型切换图标与操作按钮',
             'scope': ['lib/widgets/common', 'lib/pages/learn'],
+            'non_goals': ['不重构首页布局', '不调整现有埋点字段'],
             'impact': '不改动接口与路由，仅影响三个入口页面',
             'risk': '注意区分无数据与网络异常',
             'rollback': '回退组件引用与测试提交',
@@ -181,6 +182,8 @@ class ReviewMarkdownUnitTests(unittest.TestCase):
             self.assertIn('### 方案目标', md)
             self.assertIn('### 技术设计', md)
             self.assertIn('### 方案范围', md)
+            self.assertIn('### 非目标', md)
+            self.assertIn('- 不重构首页布局', md)
             self.assertIn('- `lib/widgets/common`', md)
             self.assertNotIn("['lib/widgets/common'", md)
             self.assertIn('### 影响范围', md)
@@ -434,6 +437,18 @@ class ReviewMarkdownCliAndPtyTests(unittest.TestCase):
         self.assertTrue(saved_path.is_file())
         self.assertEqual(stat.S_IMODE(saved_path.stat().st_mode), 0o600)
         self.assertFalse(saved_path.is_relative_to(self.root.resolve()))
+        self.assertEqual(payload['display_path'], str(saved_path.resolve()))
+        self.assertIn('完整展示', payload['presentation_note'])
+
+        saved_plain = subprocess.run(
+            [sys.executable, str(CLI), '--root', str(self.root), '--db', str(self.db), 'render-md', '--task', 'T-FULL', '--save'],
+            capture_output=True,
+            text=True,
+            env=self.env,
+        )
+        self.assertEqual(saved_plain.returncode, 0, saved_plain.stderr)
+        self.assertTrue(saved_plain.stdout.startswith('# 任务方案与状态：T-FULL\n'))
+        self.assertIn('提示：发起方案批准前', saved_plain.stderr)
 
         opened = subprocess.run(
             [sys.executable, str(CLI), '--root', str(self.root), '--db', str(self.db), 'render-md', '--task', 'T-FULL', '--open'],
@@ -523,6 +538,35 @@ class ReviewMarkdownCliAndPtyTests(unittest.TestCase):
         self.assertIn('操作未完成', stderr)
         self.assertNotIn('{"ok": false', stderr)
         self.assertIn('approval', engine.status('T-FULL')['missing'])
+
+    def test_find_saved_review_markdown_and_format_review_path(self):
+        with tempfile.TemporaryDirectory() as folder:
+            base = Path(folder)
+            root = base / 'repo'
+            root.mkdir()
+            subprocess.run(['git', 'init', '-q', str(root)], check=True)
+            (root / 'rules.md').write_text('工程规范', encoding='utf-8')
+            internal_state = root / '.speclock'
+            engine = Engine(root, internal_state / 'state.sqlite')
+            task = engine.create('T-FIND', 'full', ['A1'], _sample_plan(['A1']), 'req-find', details=_full_details())
+
+            expected = review_markdown.review_file_path(internal_state, task)
+            self.assertEqual(expected, (internal_state / 'reviews' / f"T-FIND-v{task['version']}.md").resolve())
+            self.assertEqual(review_markdown.format_review_path(root, expected), f".speclock/reviews/T-FIND-v{task['version']}.md")
+            self.assertEqual(review_markdown.format_review_path(root, base / 'outside.md'), str((base / 'outside.md').resolve()))
+            self.assertIsNone(review_markdown.find_saved_review_markdown(internal_state, root, task))
+
+            md = review_markdown.render_review_markdown(task)
+            written = review_markdown.write_review_markdown(internal_state, root, task, md)
+            self.assertEqual(review_markdown.find_saved_review_markdown(internal_state, root, task), written)
+
+            stale_task = dict(task, control_digest='different-digest')
+            self.assertIsNone(review_markdown.find_saved_review_markdown(internal_state, root, stale_task))
+
+            sym_target = written.with_name('sym.md')
+            sym_target.symlink_to(root / 'rules.md')
+            bad_task = dict(task, id='sym', version=1)
+            self.assertIsNone(review_markdown.find_saved_review_markdown(internal_state, root, bad_task))
 
     def test_host_gate_allows_new_cli_flags(self):
         self.assertTrue(host_gate.engine_command(f'python3 "{CLI}" --root "{self.root}" render-md --task T1 --open'))

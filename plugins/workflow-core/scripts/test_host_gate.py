@@ -176,6 +176,10 @@ class HostGateTests(unittest.TestCase):
             task["version"] += 1
             self.assertIn("REJECTED", host_gate.post_tool(event))
             engine.return_value.confirm_tier.assert_called_once()
+            task.update({"state": "created", "tier": "full", "missing": ["approval"]})
+            import review_markdown
+            from workflow_engine_cli import default_db
+            review_markdown.write_review_markdown(default_db(self.root).parent, self.root, task, review_markdown.render_review_markdown(task))
             event = dict(event, tool_name="ExitPlanMode", tool_use_id="call2", tool_input={"plan": "workflow-confirm:T1:r1:digest:approval"}, tool_response={"approved": True})
             self.assertIsNone(host_gate.pre_tool(event))
             self.assertIn("RECORDED", host_gate.post_tool(event))
@@ -436,11 +440,13 @@ class HostGateTests(unittest.TestCase):
             host_gate.record_hook_activity(sym_root, {"session_id": "s1", "hook_event_name": "PreToolUse"})
 
     def test_native_single_choice_approval_validation_and_receipt(self):
-        task = self.task()
-        task["control_digest"] = "digest"
+        task = {**self.task("created", missing=["approval"]), "tier": "full", "control_digest": "digest"}
         marker = "workflow-confirm:T1:r1:digest:approval"
         question_text = "请确认完整档方案 " + marker
         with tempfile.TemporaryDirectory() as home, patch.dict(os.environ, {"WORKFLOW_ENGINE_HOME": home, "WORKFLOW_HOST": "claude"}), patch.object(host_gate, "load_task", return_value=task), patch("workflow_engine.engine.Engine") as engine:
+            import review_markdown
+            from workflow_engine_cli import default_db
+            review_markdown.write_review_markdown(default_db(self.root).parent, self.root, task, review_markdown.render_review_markdown(task))
             bad_inputs = (
                 {"questions": [{"question": question_text, "options": [{"label": "批准方案"}]}]},
                 {"questions": [{"question": question_text, "options": [{"label": "批准方案"}, {"label": "批准方案"}]}]},
@@ -462,6 +468,90 @@ class HostGateTests(unittest.TestCase):
             approved = dict(event, tool_response={"answers": {question_text: "批准方案"}})
             self.assertIn("RECORDED", host_gate.post_tool(approved))
             engine.return_value.approve_proposal.assert_called_once()
+
+    def test_native_approval_requires_readiness_and_current_review_markdown(self):
+        import review_markdown
+        from workflow_engine_cli import default_db
+
+        marker = "workflow-confirm:T1:r1:digest:approval"
+        question_text = "请确认完整档方案 " + marker
+        event = self.event(
+            "AskUserQuestion",
+            questions=[{"question": question_text, "multiSelect": False, "options": [{"label": "批准方案"}, {"label": "需要修改"}]}],
+        )
+        event["tool_use_id"] = "approve-gate-call"
+
+        not_ready_cases = (
+            {**self.task("created", missing=["approval", "proposal"]), "tier": "full", "control_digest": "digest"},
+            {**self.task("created", missing=["approval", "steps"]), "tier": "full", "control_digest": "digest"},
+            {**self.task("created", missing=["approval", "tier_confirmation"]), "tier": "full", "control_digest": "digest"},
+            {**self.task("created", missing=["approval", "verify_config"]), "tier": "full", "control_digest": "digest"},
+            {**self.task("implementing", missing=["approval"]), "tier": "full", "control_digest": "digest"},
+            {**self.task("created", missing=["approval"]), "tier": "standard", "control_digest": "digest"},
+        )
+        with tempfile.TemporaryDirectory() as home, patch.dict(os.environ, {"WORKFLOW_ENGINE_HOME": home, "WORKFLOW_HOST": "claude"}):
+            for bad_task in not_ready_cases:
+                with patch.object(host_gate, "load_task", return_value=bad_task):
+                    self.assertIn("ENGINE_APPROVAL_NOT_READY", host_gate.pre_tool(event))
+
+            ready_task = {
+                **self.task("created", missing=["approval"]),
+                "tier": "full",
+                "control_digest": "digest",
+                "goal": "目标",
+                "proposal": {"goal": "方案目标", "design": "技术设计"},
+            }
+            with patch.object(host_gate, "load_task", return_value=ready_task):
+                denied = host_gate.pre_tool(event)
+                self.assertIn("ENGINE_APPROVAL_REVIEW_REQUIRED", denied)
+                self.assertIn("render-md --task T1 --save", denied)
+
+                stale_task = dict(ready_task, control_digest="old-digest")
+                review_markdown.write_review_markdown(
+                    default_db(self.root).parent,
+                    self.root,
+                    stale_task,
+                    review_markdown.render_review_markdown(stale_task),
+                )
+                self.assertIn("ENGINE_APPROVAL_REVIEW_REQUIRED", host_gate.pre_tool(event))
+
+                review_markdown.write_review_markdown(
+                    default_db(self.root).parent,
+                    self.root,
+                    ready_task,
+                    review_markdown.render_review_markdown(ready_task),
+                )
+                self.assertIsNone(host_gate.pre_tool(event))
+
+    def test_request_chat_confirmation_approval_writes_review_without_opening(self):
+        import review_markdown
+
+        task = {
+            **self.task("created", missing=["approval"]),
+            "tier": "full",
+            "control_digest": "digest",
+            "goal": "鉴权升级",
+            "source": "docs/product/需求.md",
+            "acceptance": ["令牌按绝对过期时间失效"],
+            "steps": [{"id": "s1", "title": "实现过期逻辑"}],
+            "proposal": {
+                "goal": "保存绝对过期时间",
+                "design": "TokenStore 记录 expires_at 并使用 hmac.compare_digest",
+                "scope": ["src/auth.py"],
+                "impact": "仅影响令牌存储",
+                "risk": "时钟偏移风险",
+                "rollback": "回退提交",
+                "acceptance": ["边界精确"],
+            },
+        }
+        with patch.object(review_markdown, "open_review_file", side_effect=AssertionError("不应自动弹出外部窗口")):
+            prepared = host_gate.request_chat_confirmation(self.root, task, 3, "s1", "approval", "req-approve")
+        review_file = Path(prepared["review_path"])
+        self.assertTrue(review_file.is_file())
+        self.assertEqual(prepared["review_display_path"], ".speclock/reviews/T1-v3.md")
+        self.assertIn("TokenStore 记录 expires_at", prepared["review_markdown"])
+        self.assertIn("完整展示", prepared["presentation_note"])
+        self.assertEqual(prepared["replies"], ["批准方案"])
 
     def test_hook_activity_heartbeat_throttle_and_stop_transition(self):
         with tempfile.TemporaryDirectory() as home:

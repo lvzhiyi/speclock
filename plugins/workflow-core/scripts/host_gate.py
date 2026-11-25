@@ -550,9 +550,25 @@ def request_chat_confirmation(root, task, version, session, action, request):
             (action == "approval" and {"tier_confirmation", "proposal", "steps", "verify_config"} & missing)):
         raise EngineError("CONFIRMATION_INVALID", "当前任务未等待此确认，或方案尚未就绪")
     pending = dict(confirmation_target(task, action), request=request)
+    extra = {}
+    if action == "approval":
+        from review_markdown import format_review_path, render_review_markdown, write_review_markdown
+        from workflow_engine_cli import default_db
+
+        markdown = render_review_markdown(task)
+        try:
+            review_file = write_review_markdown(default_db(root).parent, root, task, markdown)
+        except (OSError, ValueError) as exc:
+            raise EngineError("REVIEW_WRITE_FAILED", str(exc)) from exc
+        pending["review_path"] = str(review_file)
+        extra = {
+            "review_display_path": format_review_path(root, review_file),
+            "review_markdown": markdown,
+            "presentation_note": "请先在聊天回复正文中完整展示 review_markdown 全文并附上审阅稿路径，切勿压缩为简短摘要，再引导用户回复「批准方案」。",
+        }
     save_pending(pending_path(root, session, "chat:"), pending, root=root)
     replies = ["选" + label for label in TIER_LABELS] if action == "tier_confirmation" else ["批准方案"]
-    return dict(pending, replies=replies, **hook_confirmation_status(root, session))
+    return dict(pending, replies=replies, **extra, **hook_confirmation_status(root, session))
 
 
 def _parse_async_question_reply(prompt):
@@ -850,10 +866,30 @@ def prepare_confirmation(event, root):
                 return "ENGINE_CONFIRMATION_REQUIRED：定档请求须提供轻量档、标准档和完整档。"
             if action == "approval" and not offered_approval(question):
                 return "ENGINE_CONFIRMATION_REQUIRED：方案批准单选须提供「批准方案」及至少一个不批准选项。"
+        review_file = None
+        if action == "approval":
+            missing = set(task.get("missing") or [])
+            blockers = sorted({"tier_confirmation", "proposal", "steps", "verify_config"} & missing)
+            if task.get("state") != "created" or task.get("tier") != "full" or "approval" not in missing or blockers:
+                detail = "缺少 " + "、".join(blockers) if blockers else f"当前状态为 {task.get('state')} / 档位 {task.get('tier')}"
+                return f"ENGINE_APPROVAL_NOT_READY：当前任务不能发起方案批准（{detail}）。请先补齐完整方案、步骤与验证配置后再请求批准。"
+            from review_markdown import find_saved_review_markdown
+            from workflow_engine_cli import default_db
+
+            review_file = find_saved_review_markdown(default_db(root).parent, root, task)
+            if review_file is None:
+                cli_script = Path(__file__).with_name("workflow_engine_cli.py").resolve()
+                return (
+                    "ENGINE_APPROVAL_REVIEW_REQUIRED：发起完整档方案批准前，必须先导出当前版本的完整 Markdown 审阅稿并向用户完整展示方案。"
+                    f"请先运行 `python3 {cli_script} --root {shlex.quote(str(root))} render-md --task {shlex.quote(str(task['id']))} --save`"
+                    "（仅保存审阅稿，不弹外部窗口），在回复正文中完整展示提案、技术设计、实施范围、验收标准、实施步骤、验证计划及审阅稿路径（禁止压缩为简短摘要），随后再重新发起方案批准卡片。"
+                )
         request_id = uuid.uuid4().hex
         path = pending_path(root, event.get("session_id"))
         pending = dict(confirmation_target(task, action), host=host, tool=tool,
                        call=event["tool_use_id"], input=data, request=request_id)
+        if review_file is not None:
+            pending["review_path"] = str(review_file)
         save_pending(path, pending, root=root)
         if tool == "request_user_input_async":
             save_pending(pending_path(root, event.get("session_id"), "chat:"),

@@ -49,6 +49,7 @@ _PROPOSAL_SECTIONS = (
     ('goal', '方案目标'),
     ('design', '技术设计'),
     ('scope', '方案范围'),
+    ('non_goals', '非目标'),
     ('impact', '影响范围'),
     ('risk', '风险与边界'),
     ('rollback', '回滚方案'),
@@ -437,6 +438,55 @@ def _safe_task_stem(task_id):
     return safe_id
 
 
+def review_file_path(state_dir, task, *, action=None):
+    """返回审阅 Markdown 在状态目录 reviews/ 下的确定路径。"""
+    resolved_state = Path(state_dir).resolve()
+    safe_id = _safe_task_stem(task.get('id', 'task'))
+    version = task.get('version', 'unknown')
+    stem = f'{safe_id}-v{version}-{action}' if action else f'{safe_id}-v{version}'
+    return resolved_state / 'reviews' / f'{stem}.md'
+
+
+def format_review_path(root, review_path):
+    """位于项目根目录内部状态目录时返回相对 POSIX 路径，否则返回绝对路径。"""
+    resolved_root = Path(root).resolve()
+    resolved_file = Path(review_path).resolve()
+    try:
+        return resolved_file.relative_to(resolved_root).as_posix()
+    except ValueError:
+        return str(resolved_file)
+
+
+def find_saved_review_markdown(state_dir, root, task):
+    """校验当前版本及控制摘要对应的已保存审阅 Markdown 是否存在且有效。"""
+    from workflow_engine.state_dir import STATE_DIRNAME
+
+    digest = task.get('control_digest')
+    if not isinstance(digest, str) or not digest:
+        return None
+    resolved_root = Path(root).resolve()
+    speclock_dir = resolved_root / STATE_DIRNAME
+    raw_state = Path(state_dir)
+    if speclock_dir.is_symlink() or raw_state.is_symlink():
+        return None
+    resolved_state = raw_state.resolve()
+    reviews_dir = resolved_state / 'reviews'
+    if reviews_dir.is_symlink() or not reviews_dir.is_dir():
+        return None
+    target = review_file_path(resolved_state, task)
+    if target.is_symlink() or not target.is_file():
+        return None
+    try:
+        if target.stat().st_size > 1048576:
+            return None
+        content = target.read_text(encoding='utf-8')
+    except (OSError, UnicodeDecodeError):
+        return None
+    if f'`{digest}`' not in content:
+        return None
+    return target
+
+
 def write_review_markdown(state_dir, root, task, markdown, *, action=None):
     """把审阅 Markdown 原子写入状态目录的 reviews/ 下，禁止落入受管源码或符号链接。"""
     from workflow_engine.model import EngineError
@@ -474,10 +524,8 @@ def write_review_markdown(state_dir, root, task, markdown, *, action=None):
     if not allowed_internal_resolved and (resolved_reviews == resolved_root or resolved_root in resolved_reviews.parents or resolved_reviews in resolved_root.parents):
         raise ValueError('审阅目录解析后不得落入项目根目录')
 
-    safe_id = _safe_task_stem(task.get('id', 'task'))
-    version = task.get('version', 'unknown')
-    stem = f'{safe_id}-v{version}-{action}' if action else f'{safe_id}-v{version}'
-    target = reviews_dir / f'{stem}.md'
+    target = review_file_path(resolved_state, task, action=action)
+    stem = target.stem
 
     if target.is_symlink():
         raise ValueError('审阅文件目标不可为符号链接')

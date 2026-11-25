@@ -162,18 +162,63 @@ class GateTests(unittest.TestCase):
                 bad_pre = self.hook("PreToolUse", host, session_id=session, tool_name=tool, tool_input={"questions": [only_approve]}, tool_use_id="call-bad")
                 self.assertEqual(json.loads(bad_pre.stdout)["hookSpecificOutput"]["permissionDecision"], "deny")
 
+                # 未导出当前版本审阅稿前，发起原生审批卡片必须被拒绝。
                 event = dict(session_id=session, tool_name=tool, tool_input={"questions": [question]}, tool_use_id="call-approve")
+                no_review_pre = self.hook("PreToolUse", host, **event)
+                no_review_reason = json.loads(no_review_pre.stdout)["hookSpecificOutput"]["permissionDecisionReason"]
+                self.assertIn("ENGINE_APPROVAL_REVIEW_REQUIRED", no_review_reason)
+
+                cli_env = {k: v for k, v in os.environ.items() if not k.startswith("WORKFLOW_")}
+                cli_env["WORKFLOW_ENGINE_HOME"] = self.tmp.name
+                cli = str(HERE / "workflow_engine_cli.py")
+                before_git = subprocess.run(["git", "status", "--short"], cwd=self.project, text=True, capture_output=True, check=True).stdout
+                render_res = subprocess.run(
+                    [sys.executable, cli, "--root", str(self.project), "render-md", "--task", task_id, "--save", "--json"],
+                    text=True, capture_output=True, env=cli_env,
+                )
+                self.assertEqual(render_res.returncode, 0, render_res.stdout + render_res.stderr)
+                render_payload = json.loads(render_res.stdout)
+                self.assertTrue(Path(render_payload["path"]).is_file())
+                self.assertEqual(
+                    subprocess.run(["git", "status", "--short"], cwd=self.project, text=True, capture_output=True, check=True).stdout,
+                    before_git,
+                )
+
                 self.assertEqual(self.hook("PreToolUse", host, **event).stdout, "")
                 self.assertIn("REJECTED", self.hook("PostToolUse", host, **event, tool_response=reject_answer).stdout)
                 self.assertIn("approval", engine.status(task_id)["missing"])
 
-                self.assertIn("RECORDED", self.hook("PostToolUse", host, **event, tool_response=accept_answer).stdout)
+                # 修改方案后控制摘要与版本变更，重新定档后旧审阅稿仍必须失效直到重新 render-md --save。
+                updated = engine.update_task(
+                    task_id,
+                    task["version"],
+                    task_id + "-update",
+                    {"proposal": dict(proposal, design="补充技术设计细节")},
+                )
+                updated = engine.confirm_tier(task_id, updated["version"], task_id + "-tier-v2", "用户", "full")
+                new_marker = f"workflow-confirm:{task_id}:{updated['current_round']}:{updated['control_digest']}:approval"
+                new_question = dict(question, question="请确认是否批准完整档实施方案 " + new_marker)
+                if host == "claude":
+                    accept_answer = {"answers": {new_question["question"]: "批准方案"}}
+                new_event = dict(session_id=session, tool_name=tool, tool_input={"questions": [new_question]}, tool_use_id="call-approve-v2")
+                stale_pre = self.hook("PreToolUse", host, **new_event)
+                self.assertIn("ENGINE_APPROVAL_REVIEW_REQUIRED", json.loads(stale_pre.stdout)["hookSpecificOutput"]["permissionDecisionReason"])
+
+                render_v2 = subprocess.run(
+                    [sys.executable, cli, "--root", str(self.project), "render-md", "--task", task_id, "--save"],
+                    text=True, capture_output=True, env=cli_env,
+                )
+                self.assertEqual(render_v2.returncode, 0, render_v2.stdout + render_v2.stderr)
+                self.assertIn("补充技术设计细节", render_v2.stdout)
+
+                self.assertEqual(self.hook("PreToolUse", host, **new_event).stdout, "")
+                self.assertIn("RECORDED", self.hook("PostToolUse", host, **new_event, tool_response=accept_answer).stdout)
                 approved = engine.status(task_id)
-                self.assertEqual(approved["version"], task["version"] + 1)
+                self.assertEqual(approved["version"], updated["version"] + 1)
                 self.assertNotIn("approval", approved["missing"])
 
                 # 同一回执重放必须被拒绝。
-                self.assertIn("REJECTED", self.hook("PostToolUse", host, **event, tool_response=accept_answer).stdout)
+                self.assertIn("REJECTED", self.hook("PostToolUse", host, **new_event, tool_response=accept_answer).stdout)
                 self.assertEqual(engine.status(task_id)["version"], approved["version"])
 
     def test_codex_async_question_reply_and_sync_recommended_suffix(self):
@@ -229,11 +274,16 @@ class GateTests(unittest.TestCase):
         # 重放同一 call_id 回执必须被拒绝。
         self.assertIn("ENGINE_CONFIRMATION_REJECTED", self.hook("UserPromptSubmit", "codex", session_id=session, prompt=wrap_reply("call-async-tier", tier_title.strip(), "完整档 (Recommended)")).stdout)
 
-        # 2. request_user_input_async 方案批准：选不批准项被拒，选「批准方案（推荐）」入库。
+        # 2. request_user_input_async 方案批准：未导出审阅稿前被拒，导出后选不批准项被拒，选「批准方案（推荐）」入库。
+        cli_env = {k: v for k, v in os.environ.items() if not k.startswith("WORKFLOW_")}
+        cli_env["WORKFLOW_ENGINE_HOME"] = self.tmp.name
+        cli = str(HERE / "workflow_engine_cli.py")
         app_marker = f"workflow-confirm:T-ASYNC:{selected['current_round']}:{selected['control_digest']}:approval"
         app_title = f"请审批方案 {app_marker}"
         async_app_input = {"questions": [{"title": app_title, "options": ["批准方案（推荐）", "需要修改"]}]}
         async_app_event = dict(session_id=session, tool_name="request_user_input_async", tool_input=async_app_input, tool_use_id="call-async-app")
+        self.assertIn("ENGINE_APPROVAL_REVIEW_REQUIRED", self.hook("PreToolUse", "codex", **async_app_event).stdout)
+        self.assertEqual(subprocess.run([sys.executable, cli, "--root", str(self.project), "render-md", "--task", "T-ASYNC", "--save"], text=True, capture_output=True, env=cli_env).returncode, 0)
         self.assertEqual(self.hook("PreToolUse", "codex", **async_app_event).stdout, "")
         app_pending_out = self.hook("PostToolUse", "codex", **async_app_event, tool_response={"accepted": True}).stdout
         self.assertIn("ENGINE_CONFIRMATION_PENDING", app_pending_out)
@@ -280,6 +330,7 @@ class GateTests(unittest.TestCase):
             }]
         }
         app_event = dict(session_id=sync_session, tool_name="request_user_input", tool_input=sync_app_input, tool_use_id="call-sync-app")
+        self.assertEqual(subprocess.run([sys.executable, cli, "--root", str(self.project), "render-md", "--task", "T-SYNC", "--save"], text=True, capture_output=True, env=cli_env).returncode, 0)
         self.assertEqual(self.hook("PreToolUse", "codex", **app_event).stdout, "")
         self.assertIn("ENGINE_CONFIRMATION_RECORDED", self.hook("PostToolUse", "codex", **app_event, tool_response=json.dumps({"answers": {"approval": {"answers": ["批准方案（推荐）"]}}}, ensure_ascii=False)).stdout)
         self.assertNotIn("approval", engine.status("T-SYNC")["missing"])
@@ -436,6 +487,11 @@ class GateTests(unittest.TestCase):
             skill_text = (skills_dir / skill_name / "SKILL.md").read_text(encoding="utf-8")
             self.assertIn("check-hooks", skill_text)
             self.assertIn("hooks.hook_active", skill_text)
+        workflow_skill = (skills_dir / "workflow" / "SKILL.md").read_text(encoding="utf-8")
+        tiering_skill = (skills_dir / "tiering" / "SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("render-md", workflow_skill)
+        self.assertIn("ENGINE_APPROVAL_REVIEW_REQUIRED", workflow_skill)
+        self.assertIn("render-md", tiering_skill)
 
 
 if __name__ == "__main__":

@@ -357,10 +357,11 @@ def main(argv=None):
             raise EngineError('NOT_FOUND', '状态库不存在，未执行初始化')
         engine = Engine(root, database)
         if args.action == 'render-md':
-            from review_markdown import open_review_file, render_review_markdown, write_review_markdown
+            from review_markdown import format_review_path, open_review_file, render_review_markdown, write_review_markdown
 
             task = engine.status(args.task)
             markdown = render_review_markdown(task)
+            awaiting_approval = task.get('tier') == 'full' and 'approval' in (task.get('missing') or [])
             opened_with = None
             open_error = None
             if args.open or args.save:
@@ -370,6 +371,12 @@ def main(argv=None):
                     raise ArgumentError(str(exc)) from exc
             if args.open and review_path is not None:
                 opened_with, open_error = open_review_file(review_path)
+            display_path = format_review_path(root, review_path) if review_path is not None else None
+            presentation_note = (
+                '发起方案批准前，请在聊天回复正文中完整展示以上 Markdown 方案内容并附上审阅稿路径，切勿压缩为简短摘要。'
+                if awaiting_approval
+                else None
+            )
             if args.json:
                 payload = {
                     'ok': True,
@@ -381,6 +388,9 @@ def main(argv=None):
                 }
                 if review_path is not None:
                     payload['path'] = str(review_path)
+                    payload['display_path'] = display_path
+                if presentation_note is not None:
+                    payload['presentation_note'] = presentation_note
                 if args.open:
                     payload['opened'] = bool(opened_with)
                     payload['opened_with'] = opened_with
@@ -397,6 +407,12 @@ def main(argv=None):
                             print(f'已保存审阅文档：{review_path}{note}', file=sys.stderr, flush=True)
                     else:
                         print(f'已保存审阅文档：{review_path}', file=sys.stderr, flush=True)
+                    if awaiting_approval:
+                        print(
+                            f'提示：发起方案批准前，请在聊天回复正文中完整展示以上 Markdown 方案内容并附上审阅稿路径（{display_path}），切勿压缩为简短摘要。',
+                            file=sys.stderr,
+                            flush=True,
+                        )
                 print(markdown, end='' if markdown.endswith('\n') else '\n')
             return 0
         if args.action == 'create':
