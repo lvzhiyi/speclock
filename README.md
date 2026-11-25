@@ -4,54 +4,66 @@
 
 **Your coding agent says the tests passed. SpecLock requires the results before it accepts a review.**
 
-SpecLock is a task workflow plugin for **Codex, Claude Code, and Cursor**. It checks that the agent reads your project standards before editing, runs the required checks on the current code, and leaves final acceptance to you.
+SpecLock is an AI development workflow plugin for **Codex, Claude Code, and Cursor**. It ties task cards, human approvals, implementation steps, and verification results together. Scope the process to the risk, require current evidence to move forward, and leave final acceptance to a person.
+
+[Quick start](#quick-start-run-auth-r03) · [Workflow at a glance](#workflow-at-a-glance) · [OpenSpec and Superpowers](#how-it-compares-to-openspec-and-superpowers)
 
 ## Quick start: run `AUTH-R03`
 
 Try adding token expiry and revocation in an example project, without touching your own code.
 
-> The new example is not yet on public `main`. If you already have a clean copy of `examples/speclock-codex-test` with `AUTH-R03` pending, you can use it now.
+1. Clone SpecLock and enter the example directory:
 
-1. [Install `workflow-core` in Codex](#codex), then open the example as its own Git workspace. It is already configured; skip `init`.
-2. Start a new Codex session, trust and enable the SpecLock hooks in `/hooks` or **Settings → Hooks**, then send:
+   ```bash
+   git clone https://github.com/lvzhiyi/speclock.git
+   cd speclock
+   cd ./examples/speclock-codex-test
+   ```
+
+   > Public `main` currently records the example's Git commit but does not include its files. If the directory is empty after cloning, use an existing checkout of the example with `AUTH-R03` still pending.
+
+2. [Install `workflow-core` in Codex](#codex) and open the example directory in Codex. The example is already configured; skip `init`.
+3. Start a new Codex session and trust and enable the SpecLock hooks in `/hooks` or **Settings → Hooks**. First, send:
+
+   ```text
+   $workflow-core:dashboard on
+   ```
+
+   Open the returned local URL in your browser and leave the dashboard open to follow the task from the start.
+
+4. Return to the same Codex session and send:
 
    ```text
    $workflow-core:workflow Run AUTH-R03
    ```
 
-3. Confirm the **Full** tier and approve the proposal after reviewing it. Once the required checks and review pass, the task card will say **评审通过，待人工验收** (review passed, awaiting human acceptance).
+5. Confirm the **Full** tier and approve the proposal after reviewing it. Once the required checks and review pass, the task card will say **评审通过，待人工验收** (review passed, awaiting human acceptance). It will not be checked off automatically.
 
-<details>
-<summary>Set up a clean example workspace once it is available on main</summary>
+## Workflow at a glance
 
-Run in a shell with Git, `tar`, and Python 3.9+ available. Use a fresh folder: the example expects a `develop` review baseline.
+| Stage | What happens |
+| --- | --- |
+| **1. Break down a PRD (optional)** | [`prd-breakdown`](plugins/workflow-core/skills/prd-breakdown/SKILL.md) turns a product requirements document into independently testable tasks, with source references, dependencies, and acceptance criteria in repository task cards. Have an existing task or a well-scoped small edit? Go straight to confirmation. |
+| **2. Confirm and start** | The agent locates the task, checks the workspace, and builds the required-reading and verification lists. You confirm scope and tier, and separately review and approve the proposal for a Full task. The engine records receipts for required reading; missing or truncated reads block implementation. |
+| **3. Implement by tier** | **Light:** make the smallest change that satisfies the todo. **Standard:** use a 3–5 step plan in the existing card or issue, and run failing cases and targeted regression tests along the way. **Full:** save the approved proposal and design as `proposal.md` and `design.md`, then work through the ordered todos. All tiers track step completion and prefer writing a failing test first; if that is not appropriate, record why and what will be checked instead. |
+| **4. Verify** | Run the checks specified under `verify` in `ai-workflow.yaml`: documentation rules, formatting, static analysis, relevant tests, and any required builds or end-to-end tests. Record commands, exit codes, and the workspace snapshot. A missing, failed, or stale check blocks review. |
+| **5. Review on two axes** | Review a fixed set of task changes without editing code. **Spec** checks for missing, extra, or incorrect behavior and gaps in acceptance coverage. **Standards** checks project conventions, terminology, and code quality. Every tier must pass both; after fixing and re-verifying, explicitly close each required finding by the same ID instead of dropping it from the report. |
+| **6. Hand off for human acceptance** | When review passes, a linked task card is updated to “review passed, awaiting human acceptance.” The agent hands over the evidence and coverage gaps without checking off the card. |
 
-```bash
-git clone https://github.com/lvzhiyi/speclock.git &&
-  demo=$(mktemp -d "${TMPDIR:-/tmp}/speclock-demo.XXXXXX") &&
-  git -C speclock archive HEAD:examples/speclock-codex-test > "$demo/example.tar" &&
-  tar -xf "$demo/example.tar" -C "$demo" &&
-  rm "$demo/example.tar" &&
-  git -C "$demo" init -b develop &&
-  git -C "$demo" add . &&
-  git -C "$demo" -c user.name='SpecLock Demo' -c user.email=demo@example.invalid commit -m 'Example baseline' &&
-  printf 'Open in Codex: %s\n' "$demo"
-```
+**Open the Dashboard at any time.** Send `$workflow-core:dashboard on` separately in Codex, then open the local URL it returns. The read-only dashboard shows the tier, implementation todos, failures or open decisions, verification results, and review evidence. Confirmations and approvals still happen in the agent's chat.
 
-</details>
+## How it compares to OpenSpec and Superpowers
 
-## How it works
+**SpecLock can block a step, show where work stands, and back up the result with evidence.** [OpenSpec](https://github.com/Fission-AI/OpenSpec) organizes work around change specifications and makes post-implementation verification optional in its default workflow. [Superpowers](https://github.com/obra/superpowers) uses skills to require verification before the agent reports completion. SpecLock adds **gates enforced by a project-level engine**: the agent cannot advance the task just by saying it finished a step.
 
-| Stage | You | Agent / SpecLock |
-| --- | --- | --- |
-| **Start** | Give a task ID or describe the goal and acceptance criteria. | Finds the task and asks about missing decisions. |
-| **Approve** | Confirm the scope and tier. Review and approve the proposal separately for Full tasks. | Checks approvals and records that the required standards were read before implementation. |
-| **Verify and review** | Step in only if a decision or prerequisite is missing. | Runs the required checks against the current code, then reviews against both the spec and project standards. Missing or stale verification blocks review. |
-| **Accept** | Check the result and decide whether to accept it. | Hands over the evidence and any gaps. Review does not mark the task accepted. |
+**Why it matters:** The agent cannot start without the required approvals and reading, send changes to review with skipped checks or stale results, or pass review with unresolved required findings. Teams can catch problems earlier, cut rework, and track progress without digging through chat. At handoff, they can see which checks ran on the current code, what the results were, and which findings were resolved.
 
-**Light** for small edits · **Standard** for scoped features and fixes · **Full** for higher-risk work, such as auth or breaking contracts. All tiers require human scope and tier confirmation, baseline reading, verification, and both review checks.
+- **Starting work requires clearance.** Every tier needs human confirmation of scope and tier. Full tasks also need separate approval of the current proposal. Missing, incomplete, or stale receipts for required reading block implementation.
+- **See progress without following the chat.** The read-only Dashboard shows the current step, what's blocking it, who needs to act next, and the verification and review evidence for this run.
+- **Results must match the current code.** The engine runs the required project checks, records their exit codes, and binds them to a workspace snapshot. Skipped or failed checks block review, as do results invalidated by changes to relevant code or configuration.
+- **Removing a finding from the report does not fix it, and passing review is not acceptance.** Both review axes must pass. On retry, required findings must be explicitly closed under the same axis and ID. A linked task card moves to “review passed, awaiting human acceptance”; only a person checks it off.
 
-Send `$workflow-core:dashboard on` in Codex and open the returned local URL to see progress, verification results, and review evidence on the **read-only** dashboard.
+**Host hooks, a SQLite state machine, and SHA-256 file fingerprints** back these gates. Hooks enforce them on covered tool paths; the engine stores approvals, read receipts, verification results, and review evidence per task round. See the [engine protocol and CLI](docs/development/workflow-engine.md#cli-示例).
 
 ## Installation
 
@@ -89,5 +101,5 @@ Add this repo as a marketplace and select `workflow-core`, or load `plugins/work
 
 - **Workflow reference:** [Workflow skill](plugins/workflow-core/skills/workflow/SKILL.md#任务路径) · [Handling failed checks](plugins/workflow-core/skills/verify/SKILL.md#失败处理顺序) · [Engine protocol and CLI](docs/development/workflow-engine.md#cli-示例)
 - **Project tools:** [Read-only dashboard](plugins/workflow-core/skills/dashboard/SKILL.md) · [Local metrics](plugins/workflow-core/skills/metrics/SKILL.md) · [Standalone doc checker](plugins/workflow-core/scripts/vendor_check_docs.py)
-- **Optional plugins:** [`stack-flutter`](plugins/stack-flutter), [`design-pixso`](plugins/design-pixso), and [`api-apifox`](plugins/api-apifox). Claude Code can install the [combined preset](README.zh-CN.md#可选插件). You can also use SpecLock alongside [Superpowers](https://github.com/obra/superpowers).
+- **Optional plugins:** [`stack-flutter`](plugins/stack-flutter), [`design-pixso`](plugins/design-pixso), and [`api-apifox`](plugins/api-apifox). Claude Code can install the [combined preset](README.zh-CN.md#可选插件).
 - **Project links:** [Issues](https://github.com/lvzhiyi/speclock/issues) · [Release notes](docs/development/release-0.28.7.md) · [MIT License](LICENSE)

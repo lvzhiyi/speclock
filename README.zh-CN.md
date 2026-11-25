@@ -4,55 +4,66 @@
 
 **AI 说「测试过了」还不够。SpecLock 要看到验证结果，才允许评审。**
 
-SpecLock 是面向 **Codex、Claude Code 和 Cursor** 的任务工作流插件。它让 Agent 改代码前先读项目规范，评审前对当前代码跑完规定检查，最后把验收权留给你。
+SpecLock 是面向 **Codex、Claude Code 和 Cursor** 的 AI 开发工作流插件。它把任务卡、人工授权、实施步骤和验证结果连到同一条流程：按风险决定怎么做，有当前证据才能进入下一阶段，最后由人验收。
+
+[快速上手](#快速上手执行-auth-r03) · [工作流一览](#工作流一览) · [与 OpenSpec 和 Superpowers 的区别](#与-openspec-和-superpowers-的区别)
 
 ## 快速上手：执行 `AUTH-R03`
 
 在示例项目里为 API Token 加上过期和吊销校验，不动你自己的项目。
 
-> 新示例尚未同步到公开 `main`。如果你已有 `examples/speclock-codex-test` 的干净副本，且 `AUTH-R03` 为「待处理」，可以先在本地试用。
+1. 克隆 SpecLock，进入示例目录：
 
-1. [给 Codex 安装 `workflow-core`](#codex)，把示例作为独立 Git 项目打开。示例已有配置，不用运行 `init`。
-2. 新开 Codex 会话，在 `/hooks` 或 **Settings → Hooks** 信任并启用 SpecLock 钩子，然后在聊天里发送：
+   ```bash
+   git clone https://github.com/lvzhiyi/speclock.git
+   cd speclock
+   cd ./examples/speclock-codex-test
+   ```
+
+   > 公开 `main` 目前只记录示例的 Git 提交，不包含示例文件。如果克隆后目录是空的，请使用本地已有的示例仓库，并确认 `AUTH-R03` 仍为「待处理」。
+
+2. [给 Codex 安装 `workflow-core`](#codex)，在 Codex 中打开示例目录。示例已有配置，不用运行 `init`。
+3. 新开 Codex 会话，在 `/hooks` 或 **Settings → Hooks** 信任并启用 SpecLock 钩子。先在聊天里发送：
 
    ```text
-	 $workflow-core:dashboard on
+   $workflow-core:dashboard on
+   ```
+
+   在浏览器中打开返回的本机链接，保持看板开着，就能从开工起看到任务进度。
+
+4. 回到同一个 Codex 会话，发送：
+
+   ```text
    $workflow-core:workflow 开始执行任务 AUTH-R03
    ```
 
-3. 按提示选**完整档**，看过方案后再批准。规定检查和评审通过后，任务卡会变成 **「评审通过，待人工验收」**，不会自动勾完成。
-
-<details>
-<summary>示例同步到 main 后，如何准备一份干净副本</summary>
-
-需要 Git、`tar` 和 Python 3.9+。在全新目录里跑，下面会创建示例评审所用的 `develop` 基线。
-
-```bash
-git clone https://github.com/lvzhiyi/speclock.git &&
-  demo=$(mktemp -d "${TMPDIR:-/tmp}/speclock-demo.XXXXXX") &&
-  git -C speclock archive HEAD:examples/speclock-codex-test > "$demo/example.tar" &&
-  tar -xf "$demo/example.tar" -C "$demo" &&
-  rm "$demo/example.tar" &&
-  git -C "$demo" init -b develop &&
-  git -C "$demo" add . &&
-  git -C "$demo" -c user.name='SpecLock Demo' -c user.email=demo@example.invalid commit -m 'Example baseline' &&
-  printf 'Open in Codex: %s\n' "$demo"
-```
-
-</details>
+5. 按提示选**完整档**，看过方案后再批准。规定检查和评审通过后，任务卡会变成 **「评审通过，待人工验收」**，不会自动勾完成。
 
 ## 工作流一览
 
-| 阶段 | 你做什么 | Agent / SpecLock 做什么 |
-| --- | --- | --- |
-| **发任务** | 给任务号，或说清目标和验收条件。 | 找任务，有关键缺项就问。 |
-| **确认后开工** | 确认范围与档位；完整档另审方案。 | 核对授权，读完必读规范后开始实施。 |
-| **验证与评审** | 只有缺决定或执行条件时才需要介入。 | 对当前代码真跑规定检查，再按需求和工程规范两边评审。没跑完或证据过期，不能进评审。 |
-| **人工验收** | 检查结果，决定是否验收。 | 交接证据和未覆盖项，不替你勾完成。 |
+| 阶段 | 做了什么 |
+| --- | --- |
+| **1. PRD 拆解（按需）** | [`prd-breakdown`](plugins/workflow-core/skills/prd-breakdown/SKILL.md) 把需求文档拆成可独立验收的子任务，记到仓库任务卡，保留需求来源、依赖和验收条件。已有任务号或明确的小改动，可以直接进入开工确认，不必先写 PRD。 |
+| **2. 确认后开工** | Agent 定位任务、检查当前工作区，生成必读基线与检查清单。你确认范围和档位；完整档还要单独审阅并批准方案。适用规范必须读全并登记回执，缺读或截断不能开工。 |
+| **3. 分档实施** | **轻量**按待办做最小改动；**标准**在任务卡或 Issue 写 3～5 步短计划，中途跑失败用例与定向回归；**完整**将已批准的提案和设计写入 `proposal.md`、`design.md`，再按待办顺序实施。三档都记录步骤进度，优先先写失败测试；不采用时记录原因和替代验证。 |
+| **4. 验证** | 按 `ai-workflow.yaml` 的 `verify` 配置实际运行规定检查：文档规范、代码格式、静态分析、相关测试，以及配置要求的构建或端到端测试。留存命令、退出码和工作区快照；检查没跑、失败或证据失效，都不能进评审。 |
+| **5. 双轴评审** | 对固定的本任务改动只读评审：**Spec** 查漏做、多做、做偏和缺失的验收场景；**Standards** 查项目规范、术语和代码质量。三档都要两轴通过；必修项不能从重试报告里删掉，修复并复验后要用同一编号显式关闭。 |
+| **6. 人工验收** | 评审通过后，已绑定的任务卡自动更新为「评审通过，待人工验收」。Agent 交接验证与评审证据、说明未覆盖项，不替你勾完成。 |
 
-**轻量**：局部小改动 · **标准**：范围明确的功能和修复 · **完整**：认证、破坏性契约变更等高风险任务。三档都要人工确认范围和档位、读规范、跑验证、做双轴评审。
+**随时查看 Dashboard。** 在 Codex 里单独发送 `$workflow-core:dashboard on`，手动打开返回的本机链接。只读看板展示当前档位、实施待办、失败或待确认项、验证结果与双轴评审证据。它不控制流程；定档和批准仍在 Agent 窗口完成。
 
-在 Codex 中发送 `$workflow-core:dashboard on`，打开返回的本机链接，就能在**只读看板**查看任务进度、验证结果和评审证据。
+## 与 OpenSpec 和 Superpowers 的区别
+
+**SpecLock 的区别是：过程能拦、进度能看、结果能核对。** [OpenSpec](https://github.com/Fission-AI/OpenSpec) 的默认流程围绕变更规格组织工作，实施后的核对是可选环节；[Superpowers](https://github.com/obra/superpowers) 通过技能要求 Agent 先验证再报完成。SpecLock 增加的是**由项目引擎执行的放行条件**：不是 Agent 说走到哪一步，就算走到了哪一步。
+
+**这能减少什么？** 缺审批或漏读规范时，不让 Agent 抢跑；漏跑检查、拿旧结果送审，或必修问题没解决，也不能蒙混过关。团队可以更早发现问题、减少返工，不用翻聊天记录追进度；验收时能直接核对这版代码跑了哪些检查、结果如何、哪些问题已经解决。
+
+- **开工有门槛。** 三档都要人工确认范围和档位；完整档还要单独批准当前版本的方案。必读规范缺回执、读不完整或内容已变，不能开始实施。
+- **过程不用盯聊天。** 打开只读 Dashboard，就能看见当前做到哪一步、为什么卡住、下一步等谁，以及本轮验证和评审留下了什么证据。
+- **结果必须对得上当前代码。** 引擎按项目配置实际运行规定检查，记录退出码并绑定工作区快照。没跑、跑失败，或相关代码和配置变化导致证据失效，都不能通过评审门禁。
+- **删报告不等于修好，评审通过不等于验收。** 两个评审轴都要通过；必修项在重审时必须在原评审轴用同一编号明确关闭。已绑定的任务卡只回写「评审通过，待人工验收」，完成框留给人。
+
+这些条件由**宿主钩子、SQLite 状态机和 SHA-256 文件指纹**支撑：钩子在已接入的操作路径执行门禁，引擎按任务轮次保存审批、回执、验证与评审证据。详见[引擎协议与 CLI](docs/development/workflow-engine.md#cli-示例)。
 
 ## 安装
 
@@ -90,7 +101,6 @@ claude plugin install workflow-core@speclock
 
 - **Flutter / Pixso / Apifox**：按需添加 [`stack-flutter`](plugins/stack-flutter)、[`design-pixso`](plugins/design-pixso)、[`api-apifox`](plugins/api-apifox)。Apifox 需单独[安装 CLI 并登录](https://apifox.com/apifox-cli-installation-guide.md)；Pixso 首次使用时按提示授权。
 - **Claude Code 组合包**：先运行 `claude plugin marketplace add flutter/agent-plugins`，再运行 `claude plugin install preset-flutter-pixso-apifox@speclock`。
-- **Superpowers**：可以搭配使用。Superpowers 提供开发方法，SpecLock 负责项目里的授权、验证证据与评审门禁。
 
 ## 深入了解
 
