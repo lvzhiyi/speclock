@@ -20,8 +20,6 @@ Try adding token expiry and revocation in an example project, without touching y
    cd ./examples/speclock-codex-test
    ```
 
-   > Public `main` currently records the example's Git commit but does not include its files. If the directory is empty after cloning, use an existing checkout of the example with `AUTH-R03` still pending.
-
 2. [Install `workflow-core` in Codex](#codex) and open the example directory in Codex. The example is already configured; skip `init`.
 3. Start a new Codex session and trust and enable the SpecLock hooks in `/hooks` or **Settings → Hooks**. First, send:
 

@@ -20,8 +20,6 @@ SpecLock 是面向 **Codex、Claude Code 和 Cursor** 的 AI 开发工作流插�
    cd ./examples/speclock-codex-test
    ```
 
-   > 公开 `main` 目前只记录示例的 Git 提交，不包含示例文件。如果克隆后目录是空的，请使用本地已有的示例仓库，并确认 `AUTH-R03` 仍为「待处理」。
-
 2. [给 Codex 安装 `workflow-core`](#codex)，在 Codex 中打开示例目录。示例已有配置，不用运行 `init`。
 3. 新开 Codex 会话，在 `/hooks` 或 **Settings → Hooks** 信任并启用 SpecLock 钩子。先在聊天里发送：
 
