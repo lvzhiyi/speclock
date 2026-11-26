@@ -8,6 +8,8 @@ SpecLock 是面向 **Codex、Claude Code 和 Cursor** 的 AI 开发工作流插�
 
 [快速上手](#快速上手执行-auth-r03) · [工作流一览](#工作流一览) · [任务结束时你拿到什么](#任务结束时你拿到什么) · [与 OpenSpec 和 Superpowers 的区别](#与-openspec-和-superpowers-的区别)
 
+![SpecLock 架构图](docs/images/architecture.png)
+
 ## 快速上手：执行 `AUTH-R03`
 
 在示例项目里为 API Token 加上过期和吊销校验，不动你自己的项目。

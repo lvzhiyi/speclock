@@ -4,11 +4,11 @@
 def page_html() -> str:
     """返回静态页面；项目数据只通过同源只读接口取得。"""
     return r'''<!doctype html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>SpecLock · 工作流看板</title>
+<title>SpecLock · Workflow Dashboard</title>
 <style>
 :root{
   color-scheme:dark;
@@ -835,50 +835,50 @@ body[data-motion=reduced] *,body[data-motion=reduced] *::before,body[data-motion
 <main class="shell">
 <header class="header">
   <div>
-    <div class="brand-row"><span class="eyebrow">SpecLock</span><span class="live-pill"><span class="live-dot"></span><span id="live-tag">实时 · 2s</span></span></div>
-    <h1 id="project-name">工作流看板</h1>
-    <p id="project-root" class="muted">等待项目数据</p>
+    <div class="brand-row"><span class="eyebrow">SpecLock</span><span class="live-pill"><span class="live-dot"></span><span id="live-tag">Live · 2s</span></span></div>
+    <h1 id="project-name">Workflow Dashboard</h1>
+    <p id="project-root" class="muted">Waiting for project data</p>
   </div>
   <div class="actions">
-    <span id="updated" class="muted">每 2 秒刷新</span>
-    <button id="motion-toggle" type="button">动效：开</button>
-    <button id="lang-toggle" type="button">EN</button>
-    <button id="refresh" type="button">立即刷新</button>
+    <span id="updated" class="muted">Refresh every 2s</span>
+    <button id="motion-toggle" type="button">Motion: On</button>
+    <button id="lang-toggle" type="button">中文</button>
+    <button id="refresh" type="button">Refresh</button>
   </div>
 </header>
-<div id="connection" class="notice" role="status" aria-live="polite">正在读取看板…</div>
-<section class="statusbar" aria-label="任务与引擎状态">
-  <div class="stat-box"><span id="lbl-task-overview" class="muted">任务概览</span><strong id="task-summary">未知</strong><span id="lbl-task-note" class="muted">任务卡状态不等同于验证通过</span></div>
-  <div class="stat-box"><span id="lbl-exec-mode" class="muted">执行模式</span><strong id="engine-mode">未知</strong><span id="engine-binding" class="muted">绑定：未知</span></div>
-  <div class="stat-box"><span id="lbl-engine-stat" class="muted">引擎状态</span><strong id="engine-state">未知</strong><span id="engine-available" class="muted">可用性：未知</span></div>
+<div id="connection" class="notice" role="status" aria-live="polite">Loading dashboard…</div>
+<section class="statusbar" aria-label="Task and engine status">
+  <div class="stat-box"><span id="lbl-task-overview" class="muted">Tasks</span><strong id="task-summary">Unknown</strong><span id="lbl-task-note" class="muted">Read-only projection from SQLite &amp; docs</span></div>
+  <div class="stat-box"><span id="lbl-exec-mode" class="muted">Guardrails</span><strong id="engine-mode">Unknown</strong><span id="engine-binding" class="muted">Binding: Unknown</span></div>
+  <div class="stat-box"><span id="lbl-engine-stat" class="muted">Engine Health</span><strong id="engine-state">Unknown</strong><span id="engine-available" class="muted">Source: Unknown</span></div>
 </section>
 <div id="warning" class="notice" hidden></div>
-<section id="reading-issues" class="panel" hidden><h2 id="lbl-issues-title">读取问题</h2><ul id="issues" class="issues"></ul></section>
+<section id="reading-issues" class="panel" hidden><h2 id="lbl-issues-title">Reading Issues</h2><ul id="issues" class="issues"></ul></section>
 <div class="dashboard-layout">
   <details id="document-sources" class="panel">
-    <summary><strong id="lbl-doc-sources">文档来源</strong> <span id="document-count" class="muted"></span></summary>
+    <summary><strong id="lbl-doc-sources">Documents</strong> <span id="document-count" class="muted"></span></summary>
     <div id="documents"></div>
-    <p id="lbl-doc-legend" class="legend">只读纯文本预览，不执行 Markdown 或 HTML。</p>
+    <p id="lbl-doc-legend" class="legend">Read-only plain-text preview.</p>
   </details>
-  <section class="panel task-panel"><h2 id="lbl-cards-title">任务卡</h2>
-    <section id="mission-strip" class="mission-strip" aria-label="串行任务总览" hidden></section>
+  <section class="panel task-panel"><h2 id="lbl-cards-title">Tasks &amp; Guardrail Evidence</h2>
+    <section id="mission-strip" class="mission-strip" aria-label="Serial pipeline overview" hidden></section>
     <div class="searchbar" role="search" aria-label="任务筛选：搜索、状态与档位">
-      <div class="search-input"><label id="lbl-search" class="muted" for="task-filter">搜索任务</label><input id="task-filter" type="search" placeholder="搜索编号或标题" autocomplete="off"></div>
-      <div><label id="lbl-state-filter" class="muted" for="state-filter">状态</label><select id="state-filter"><option value="all">全部状态</option></select></div>
-      <div><label id="lbl-tier-filter" class="muted" for="tier-filter">档位</label><select id="tier-filter"><option value="all">全部档位</option><option value="light">轻量</option><option value="standard">标准</option><option value="full">完整</option><option value="unknown">未知</option></select></div>
-      <button id="clear-filter" type="button">清空筛选</button>
+      <div class="search-input"><label id="lbl-search" class="muted" for="task-filter">Search</label><input id="task-filter" type="search" placeholder="Search ID or title" autocomplete="off"></div>
+      <div><label id="lbl-state-filter" class="muted" for="state-filter">State</label><select id="state-filter"><option value="all">All States</option></select></div>
+      <div><label id="lbl-tier-filter" class="muted" for="tier-filter">Tier</label><select id="tier-filter"><option value="all">All Tiers</option><option value="light">Light</option><option value="standard">Standard</option><option value="full">Full</option><option value="unknown">Unknown</option></select></div>
+      <button id="clear-filter" type="button">Clear</button>
       <p id="filter-count" class="muted" role="status" aria-live="polite"></p>
     </div>
     <div id="tasks" class="cards"></div>
   </section>
 </div>
 </main>
-<aside id="drawer" class="drawer" aria-label="文档纯文本预览" hidden><div class="drawer-header"><h2 id="document-title">文档</h2><button id="close-document" type="button">关闭预览</button></div><p id="document-status" class="drawer-status" role="status"></p><pre id="document-content" tabindex="0"></pre></aside>
+<aside id="drawer" class="drawer" aria-label="Document plain-text preview" hidden><div class="drawer-header"><h2 id="document-title">Document</h2><button id="close-document" type="button">Close</button></div><p id="document-status" class="drawer-status" role="status"></p><pre id="document-content" tabindex="0"></pre></aside>
 <script>
 'use strict';
 const byId = id => document.getElementById(id);
 const currentQuery = typeof location !== 'undefined' && location.search ? location.search : '';
-let lang = /[?&]lang=en(?:&|$)/i.test(currentQuery) ? 'en' : 'zh';
+let lang = /[?&]lang=zh(?:&|$)/i.test(currentQuery) ? 'zh' : 'en';
 const text = (value, fallback) => {
   const fb = fallback !== undefined ? fallback : (lang === 'en' ? 'Unknown' : '未知');
   return value === null || value === undefined || value === '' ? fb : typeof value === 'object' ? JSON.stringify(value) : String(value);
@@ -923,7 +923,51 @@ const phaseLabels = {planning:'就绪与授权',implementation:'实施',verifica
 const enPhaseLabels = {planning:'Ready',implementation:'Implement',verification:'Verify',review:'Review',done:'Done'};
 const phaseName = id => (lang === 'en' ? enPhaseLabels[id] : phaseLabels[id]) || id;
 const blockerEn = {'任务目标未明确':'Goal not specified','任务范围未明确':'Scope not specified','需求来源未明确':'Source not specified','验收标准未明确':'Acceptance criteria missing','依赖尚未就绪':'Dependencies not ready','档位尚未确认':'Tier confirmation required','方案尚未批准':'Proposal approval required','方案信息不完整':'Proposal incomplete','实施步骤尚未就绪':'Implementation steps not ready','执行者尚未绑定':'Executor session unbound','基线尚未完成有效读取':'Required baselines unread (SHA-256 missing)','验证配置尚未就绪':'Verify config missing','证据快照已失效':'Workspace snapshot invalidated','检查计划尚未确认':'Check plan unconfirmed','当前验证尚未通过':'Verification checks not passed','当前双轴评审尚未通过':'Dual-axis review not passed','后续验证尚未完成':'Upcoming verification checks','后续双轴评审尚未完成':'Upcoming dual-axis review'};
-const tBlocker = msg => lang === 'en' ? (blockerEn[msg] || msg) : msg;
+const backendMsgEn = {
+  '引擎数据库不存在；未创建数据库':'Engine database does not exist yet (not created in read-only mode).',
+  '检测到旧版状态库，运行任意引擎 CLI 命令后自动迁移':'Legacy state database detected; run any engine CLI command to migrate automatically.',
+  '任务绑定其他 root':'Task is bound to a different repository root.',
+  '引擎数据库或任务数据不可用':'Engine database or task data unavailable.',
+  '旧 engine.enabled 已废弃，请迁移配置；该键不影响任务读取':'Legacy engine.enabled is deprecated; please migrate config (does not affect task reading).',
+  '文档扫描达到数量限制':'Document scan reached item limit.',
+  '文档数量超过限制':'Document count exceeded limit.',
+  '文档总大小超过限制':'Total document size exceeded limit.',
+  '引擎任务累计读取达到限制':'Total engine task read size reached limit.',
+  '引擎任务数量超过限制':'Engine task count exceeded limit.',
+  '引擎数据库无法只读解析':'Engine database could not be read in read-only mode.',
+  '当前阻塞条件待确认':'Active blocker pending confirmation'
+};
+const backendPrefixEn = [
+  ['工作流配置不可安全加载：','Workflow config could not be safely loaded: '],
+  ['配置文档目录不存在：','Configured docs directory missing: '],
+  ['配置文档路径不可安全访问：','Configured docs path not safely accessible: '],
+  ['文档不存在或不可安全读取：','Document missing or not safely readable: '],
+  ['引擎任务 root 绑定不匹配：','Engine task root binding mismatch: '],
+  ['状态证据冲突：','Conflicting state evidence: '],
+  ['任务标题冲突：','Conflicting task title: '],
+  ['待确认记录字段不完整：','Incomplete pending-decision record: '],
+  ['未知就绪条件：','Unknown readiness gate: '],
+  ['基线读取已失效：','Baseline read invalidated: '],
+  ['双轴评审已失效：','Dual-axis review invalidated: '],
+  ['验证已失效：','Verification invalidated: '],
+  ['方案批准已失效：','Proposal approval invalidated: '],
+  ['档位确认已失效：','Tier confirmation invalidated: '],
+  ['证据已失效：','Evidence invalidated: ']
+];
+function tBackendMsg(msg) {
+  if (lang !== 'en' || typeof msg !== 'string') return msg;
+  if (backendMsgEn[msg]) return backendMsgEn[msg];
+  for (const [zhPrefix, enPrefix] of backendPrefixEn) {
+    if (msg.startsWith(zhPrefix)) {
+      const rest = msg.slice(zhPrefix.length).replace('版本或绑定已变化，需重新取得证据', 'Version or binding changed; re-acquire evidence');
+      return enPrefix + rest;
+    }
+  }
+  return msg;
+}
+const tBlocker = msg => lang === 'en' ? (blockerEn[msg] || tBackendMsg(msg)) : msg;
+const summaryEn = {'任务登记，等待就绪门槛':'Task registered; awaiting readiness gates','正在实施当前步骤':'Implementing current steps','实施完成待真实验证':'Implementation complete; awaiting verification','验证执行中':'Verification running','验证记录通过，等待双轴评审':'Verification passed; awaiting dual-axis review','验证失败，查看尝试与诊断':'Verification failed; inspect attempts & logs','证据失效，需重新验证':'Evidence invalidated; re-verification required','双轴评审未通过':'Dual-axis review failed','Agent 评审通过并结束，待人工验收（不是交付）':'Agent review passed; pending human acceptance (not delivered)','本轮已取消':'Current round cancelled','状态未知':'Unknown state','历史未核验：旧记录不构成当前通过证据':'Legacy record unverified; does not constitute current pass evidence'};
+const tSummary = msg => lang === 'en' ? (summaryEn[msg] || msg) : msg;
 function detailBlock(title, value) {
   const section = element('section');
   const pre = element('pre');
@@ -943,11 +987,15 @@ function summarySection(title, lines, fallback) {
   return section;
 }
 const businessFields = {goal:'目标',scope:'范围',title:'标题',description:'说明',summary:'摘要',content:'内容',status:'状态',impact:'影响',risk:'风险',rollback:'回滚',acceptance:'验收标准',criteria:'验收条件',result:'结果',conclusion:'结论',message:'说明',note:'备注',owner:'负责人',reviewer:'验收人',by:'确认人',at:'时间',next_step:'下一步',next_steps:'下一步',next:'下一步',reason:'原因',source:'来源',documents:'参考文档',completed:'是否完成',accepted:'是否接受',decision:'决定',steps:'步骤',path:'路径',question:'待确认',resume:'恢复条件'};
+const enBusinessFields = {goal:'Goal',scope:'Scope',title:'Title',description:'Description',summary:'Summary',content:'Content',status:'Status',impact:'Impact',risk:'Risk',rollback:'Rollback',acceptance:'Acceptance',criteria:'Criteria',result:'Result',conclusion:'Conclusion',message:'Message',note:'Note',owner:'Owner',reviewer:'Reviewer',by:'Confirmed By',at:'At',next_step:'Next Step',next_steps:'Next Steps',next:'Next',reason:'Reason',source:'Source',documents:'Documents',completed:'Completed',accepted:'Accepted',decision:'Decision',steps:'Steps',path:'Path',question:'Question',resume:'Resume'};
 function businessLines(value, prefix = '', depth = 0) {
   if (depth > 5 || value === null || value === undefined || value === '') return [];
   if (Array.isArray(value)) return value.flatMap(v => businessLines(v,prefix,depth+1));
-  if (typeof value === 'object') return Object.entries(businessFields).flatMap(([key,label]) => businessLines(value[key],prefix ? prefix + ' / ' + label : label,depth+1));
-  return [(prefix ? prefix + '：' : '') + (typeof value === 'boolean' ? value ? '是' : '否' : String(value))];
+  const fieldMap = lang === 'en' ? enBusinessFields : businessFields;
+  if (typeof value === 'object') return Object.entries(fieldMap).flatMap(([key,label]) => businessLines(value[key],prefix ? prefix + ' / ' + label : label,depth+1));
+  const sep = lang === 'en' ? ': ' : '：';
+  const boolText = lang === 'en' ? (value ? 'Yes' : 'No') : (value ? '是' : '否');
+  return [(prefix ? prefix + sep : '') + (typeof value === 'boolean' ? boolText : String(value))];
 }
 function disclosure(title, className, state, key, load, initiallyOpen = false) {
   const details = element('details',undefined,className);
@@ -1446,7 +1494,9 @@ function renderBusiness(item, state, defaultGroup) {
   const root = element('div'), b = item.business || {}, readiness = item.readiness || {};
   const group = (key, title, load) => disclosure(title,'business-section',state,key,load,key === defaultGroup);
   const d = item.details || {};
-  const pending = list(item.pending).flatMap(p => typeof p === 'string' ? [p] : ['待确认：' + text(p.question,'内容未记录'),'影响：' + text(p.impact,'未记录'),'负责人：' + text(p.owner,'未记录'),'恢复条件：' + text(p.resume,'未记录'),'来源：' + text(p.source,'来源未记录')]);
+  const pending = list(item.pending).flatMap(p => typeof p === 'string' ? [p] : (lang === 'en'
+    ? ['Pending: ' + text(p.question,'Not recorded'),'Impact: ' + text(p.impact,'Not recorded'),'Owner: ' + text(p.owner,'Not recorded'),'Resume: ' + text(p.resume,'Not recorded'),'Source: ' + text(p.source,'Source not recorded')]
+    : ['待确认：' + text(p.question,'内容未记录'),'影响：' + text(p.impact,'未记录'),'负责人：' + text(p.owner,'未记录'),'恢复条件：' + text(p.resume,'未记录'),'来源：' + text(p.source,'来源未记录')]));
   root.append(group('attention',lang === 'en' ? 'Blockers & Pending Decisions' : '当前阻止条件与待确认',() => [
     summarySection(lang === 'en' ? 'Blocking Gates' : '当前阻止条件',list(readiness.blocking).map(tBlocker),lang === 'en' ? 'No active blocking gates; does not imply verification passed' : '暂无已记录的当前阻止条件；不代表验证通过'),
     summarySection(lang === 'en' ? 'Pending Items' : '当前待确认',pending,lang === 'en' ? 'No pending items' : '暂无已记录的待确认事项'),
@@ -1454,25 +1504,28 @@ function renderBusiness(item, state, defaultGroup) {
   ]));
   const todos = list(d.todos);
   root.append(group('scope',lang === 'en' ? 'Goal, Scope & Acceptance' : '目标、范围与验收',() => [
-    summarySection(lang === 'en' ? 'Goal & Scope' : '任务目标与范围',[...businessLines(d.goal,'目标'),...businessLines(d.scope,'范围')]),
+    summarySection(lang === 'en' ? 'Goal & Scope' : '任务目标与范围',[...businessLines(d.goal,lang === 'en' ? 'Goal' : '目标'),...businessLines(d.scope,lang === 'en' ? 'Scope' : '范围')]),
     summarySection(lang === 'en' ? 'Acceptance Criteria' : '验收标准',businessLines(d.acceptance)),
     summarySection(lang === 'en' ? 'Human Acceptance' : '人工验收',businessLines(d.human_acceptance), lang === 'en' ? 'Human acceptance not recorded yet; Agent review pass is not delivery' : '人工验收尚未发生；Agent 评审通过不等于人工接受或交付'),
     summarySection(lang === 'en' ? 'Doc Delivery Marker' : '文档交付标记',item.human_delivery_completed === true ? [lang === 'en' ? 'Marked delivered in docs (non-engine evidence)' : '文档标记已交付（非引擎验收证据）',(lang === 'en' ? 'Source: ' : '来源：') + text(item.human_delivery_source)] : [lang === 'en' ? 'No delivery marker in docs' : '尚无文档交付完成标记'])
   ]));
   const checks = list((d.plan || {}).checks).map(c => text(c.name || c.title || c.id,lang === 'en' ? 'Unnamed check' : '未命名检查') + (lang === 'en' ? ' · cmd: ' : ' · 命令：') + list(c.argv).filter(v=>typeof v==='string').join(' ') + (lang === 'en' ? ' · cwd: ' : ' · 工作目录：') + text(c.cwd));
   const baseStatusText = s => lang === 'en' ? ({'已读':'Read (SHA-256 verified)','未读':'Unread','已失效':'Invalidated'}[s] || s) : s;
+  const approvalTitle = s => lang === 'en' ? ({'档位确认':'Tier Confirmation','方案批准':'Proposal Approval'}[s] || s) : s;
+  const approvalStatus = s => lang === 'en' ? ({'已记录（非交付）':'Recorded (non-delivery)','已失效':'Invalidated'}[s] || s) : s;
+  const reviewAxisTitle = s => lang === 'en' ? ({'需求符合性':'Spec Compliance','工程规范':'Engineering Standards'}[s] || s) : s;
   root.append(group('implementation',lang === 'en' ? 'Proposal, Steps & Baselines' : '方案、实施与交接',() => [
     summarySection(lang === 'en' ? 'Proposal Summary' : '方案摘要',businessLines(d.proposal)),
     summarySection(lang === 'en' ? 'Implementation Steps' : '实施步骤',todos.map(t => text(t.title,lang === 'en' ? 'Unnamed step' : '未命名步骤') + ' · ' + stateLabel(t.status))),
     summarySection(lang === 'en' ? 'Required Baselines' : '基线读取',list(b.baseline).map(v => text(v.path) + ' · ' + baseStatusText(text(v.status)))),
-    summarySection(lang === 'en' ? 'Approvals' : '批准摘要',list(b.approvals).map(v => text(v.title) + ' · ' + text(v.status))),
+    summarySection(lang === 'en' ? 'Approvals' : '批准摘要',list(b.approvals).map(v => approvalTitle(text(v.title)) + ' · ' + approvalStatus(text(v.status)))),
     summarySection(lang === 'en' ? 'Handoff Next Step' : '交接下一步',businessLines(d.handoff),lang === 'en' ? 'No handoff recorded' : '尚未记录交接下一步')
   ]));
   root.append(group('verification',lang === 'en' ? 'Verification & Dual-Axis Review' : '验证与评审',() => [
     summarySection(lang === 'en' ? 'Check Plan' : '验证检查计划',checks,lang === 'en' ? 'No readable check plan' : '尚无可读检查命令，不能视为验证已执行'),
     renderVerification(b),
-    summarySection(lang === 'en' ? 'Dual-Axis Review' : '双轴评审',list(b.review).flatMap(v => [v.title + '：' + ({pass:lang==='en'?'Passed (recorded)':'通过（保存记录）',fail:lang==='en'?'Failed':'未通过',invalidated:lang==='en'?'Invalidated':'已失效',unknown:lang==='en'?'Unknown':'未知，未确认通过'}[v.conclusion] || '未知，未确认通过') + (lang==='en'?' · Unresolved required: ':' · 必须解决待办 ') + text(v.unresolved),...list(v.findings).map(f => text(f.message) + ' · ' + (f.resolved === true ? (lang==='en'?'Resolved':'已解决') : f.required === true ? (lang==='en'?'Required':'必须解决') : (lang==='en'?'Pending':'待确认')))])),
-    summarySection(lang === 'en' ? 'Invalidation Log' : '证据失效摘要',list(b.invalidations),lang === 'en' ? 'No invalidations recorded' : '未记录失效；文件新鲜度仍未核验')
+    summarySection(lang === 'en' ? 'Dual-Axis Review' : '双轴评审',list(b.review).flatMap(v => [reviewAxisTitle(v.title) + (lang==='en'?': ':'：') + ({pass:lang==='en'?'Passed (recorded)':'通过（保存记录）',fail:lang==='en'?'Failed':'未通过',invalidated:lang==='en'?'Invalidated':'已失效',unknown:lang==='en'?'Unknown (not confirmed passed)':'未知，未确认通过'}[v.conclusion] || (lang==='en'?'Unknown (not confirmed passed)':'未知，未确认通过')) + (lang==='en'?' · Unresolved required: ':' · 必须解决待办 ') + text(v.unresolved),...list(v.findings).map(f => text(f.message) + ' · ' + (f.resolved === true ? (lang==='en'?'Resolved':'已解决') : f.required === true ? (lang==='en'?'Required':'必须解决') : (lang==='en'?'Pending':'待确认')))])),
+    summarySection(lang === 'en' ? 'Invalidation Log' : '证据失效摘要',list(b.invalidations).map(v => tBackendMsg(text(v))),lang === 'en' ? 'No invalidations recorded' : '未记录失效；文件新鲜度仍未核验')
   ]));
   root.append(group('history',lang === 'en' ? 'Round History' : '轮次历史',() => [
     summarySection(lang === 'en' ? 'Rounds' : '轮次记录',list(b.rounds).map(r => (lang==='en'?'Round #':'第 ') + r.number + (lang==='en'?'':' 轮') + (r.current ? (lang==='en'?' (Current)':'（当前）') : '') + ' · ' + stateLabel(r.state) + ' · ' + phaseName(r.phase)))
@@ -1485,10 +1538,12 @@ function renderVerification(b) {
   list(b.verification).forEach((attempt,index) => {
     verification.append(element('p',(lang==='en'?'Attempt #':'第 ') + (index+1) + (lang==='en'?'':' 次验证') + ' · ' + stateLabel(attempt.status) + (attempt.failure ? (lang==='en'?' · Error: ':' · 执行异常：') + text(attempt.failure) : '')));
     list(attempt.checks).forEach(check => {
-      verification.append(element('p',text(check.id,'未命名检查') + (lang==='en'?' · exit=':' · 退出码：') + text(check.exit_code) + (lang==='en'?' · reason=':' · 原因：') + text(check.reason)));
+      verification.append(element('p',text(check.id,lang==='en'?'Unnamed check':'未命名检查') + (lang==='en'?' · exit=':' · 退出码：') + text(check.exit_code) + (lang==='en'?' · reason=':' · 原因：') + text(check.reason)));
       const logs = element('details',undefined,'log');logs.append(element('summary',lang==='en'?'Expand stdout / stderr (max 16384 chars)':'展开此检查日志 · 纯文本（最多 16384 字符）'));
-      const raw = '标准输出\n' + text(check.stdout,'无') + '\n标准错误\n' + text(check.stderr,'无');
-      logs.append(element('pre',raw.slice(0,16384) + (raw.length > 16384 || check.truncated ? '\n[日志已达到限额或源日志被截断]' : '')));verification.append(logs);
+      const emptyLog = lang === 'en' ? 'None' : '无';
+      const raw = (lang === 'en' ? 'stdout\n' : '标准输出\n') + text(check.stdout,emptyLog) + (lang === 'en' ? '\nstderr\n' : '\n标准错误\n') + text(check.stderr,emptyLog);
+      const truncMsg = lang === 'en' ? '\n[Log limit reached or source log truncated]' : '\n[日志已达到限额或源日志被截断]';
+      logs.append(element('pre',raw.slice(0,16384) + (raw.length > 16384 || check.truncated ? truncMsg : '')));verification.append(logs);
     });
   });
   return verification;
@@ -1506,34 +1561,37 @@ function taskHighlight(item) {
   const latest = reports.at(-1);
   if (item.state === 'failed') {
     const check = list(latest?.checks).find(v => (Number.isInteger(v.exit_code) && v.exit_code !== 0) || (v.reason && v.reason !== 'exit'));
-    const message = check ? text(check.id,'检查') + ' · ' + (check.reason && check.reason !== 'exit' ? check.reason : (lang === 'en' ? 'exit ' : '退出码 ') + check.exit_code) : latest?.failure;
+    const message = check ? text(check.id,lang === 'en' ? 'check' : '检查') + ' · ' + (check.reason && check.reason !== 'exit' ? check.reason : (lang === 'en' ? 'exit ' : '退出码 ') + check.exit_code) : latest?.failure;
     addConcern(lang === 'en' ? 'Check Failed' : '验证失败',message || (lang === 'en' ? 'Inspect latest verification attempt' : '查看最近一次验证尝试'),'当前验证尚未通过');
   }
-  if (item.state === 'stale') addConcern(lang === 'en' ? 'Stale' : '证据失效',list(b.invalidations).at(-1) || (lang === 'en' ? 'Re-verification required' : '查看需要重新取得的证据'),'证据快照已失效');
+  if (item.state === 'stale') {
+    const inv = list(b.invalidations).at(-1);
+    addConcern(lang === 'en' ? 'Stale' : '证据失效',(inv ? tBackendMsg(text(inv)) : '') || (lang === 'en' ? 'Re-verification required' : '查看需要重新取得的证据'),'证据快照已失效');
+  }
   if (item.state === 'review_failed') {
     const axis = list(b.review).find(v => v.conclusion === 'fail');
     const finding = list(axis?.findings).find(v => v.required === true && v.resolved !== true);
     addConcern(lang === 'en' ? 'Review Failed' : '评审未通过',finding?.message || axis?.title || (lang === 'en' ? 'See dual-axis review findings' : '查看双轴评审记录'),'当前双轴评审尚未通过');
   }
   for (const pending of list(item.pending)) {
-    concerns.push({label:lang === 'en' ? 'Pending' : '待确认',message:text(typeof pending === 'string' ? pending : pending?.question,'内容未记录'),group:'attention'});
+    concerns.push({label:lang === 'en' ? 'Pending' : '待确认',message:text(typeof pending === 'string' ? pending : pending?.question,lang === 'en' ? 'Not recorded' : '内容未记录'),group:'attention'});
   }
   if (concerns.length) return {...concerns[0],remaining:concerns.length - 1};
   const d = item.details || {};
   if (item.state === 'implementing' && item.progress?.current) return {label:lang === 'en' ? 'Current Step' : '当前步骤',message:item.progress.current};
   if (item.state === 'pending_verification') {
     const checks = list(d.plan?.checks).filter(c => list(c.argv).some(arg => typeof arg === 'string' && arg.trim()));
-    const planned = checks.map(c => text(c.name || c.title || c.id,'未命名检查')).join(lang === 'en' ? ', ' : '、');
+    const planned = checks.map(c => text(c.name || c.title || c.id,lang === 'en' ? 'Unnamed check' : '未命名检查')).join(lang === 'en' ? ', ' : '、');
     if (planned) return {label:lang === 'en' ? 'Next' : '下一步',message:(lang === 'en' ? 'Run verification: ' : '执行验证：') + planned + (reports.length ? '' : (lang === 'en' ? ' (no attempt yet)' : '（未记录验证尝试）')),group:'verification'};
     if (!reports.length) return {label:lang === 'en' ? 'Unverified' : '验证未记录',message:lang === 'en' ? 'No verification attempt yet' : '尚无验证尝试',group:'verification'};
   }
   if (item.state === 'review_passed' && !item.protocol_version) return {label:lang === 'en' ? 'Git Card' : 'Git 任务卡',message:lang === 'en' ? 'Review passed — pending human acceptance (from Git card)' : '评审通过，待人工验收（来自 Git 任务卡）',tone:'good'};
   if (item.state === 'completed' && !item.protocol_version) return {label:lang === 'en' ? 'Git Card' : 'Git 任务卡',message:lang === 'en' ? 'Accepted / completed (from Git card)' : '已验收 / 已完成（来自 Git 任务卡）',tone:'good'};
   if (item.state === 'review_passed') return {label:lang === 'en' ? 'Done (Agent)' : 'Agent 终态',message:lang === 'en' ? 'Verified & dual-axis review passed — ready for human acceptance' : item.summary,tone:'good'};
-  if (item.state === 'cancelled') return {label:lang === 'en' ? 'Cancelled' : '已取消',message:item.summary || (lang === 'en' ? 'Current round cancelled' : '本轮已取消')};
+  if (item.state === 'cancelled') return {label:lang === 'en' ? 'Cancelled' : '已取消',message:tSummary(item.summary) || (lang === 'en' ? 'Current round cancelled' : '本轮已取消')};
   const handoff = d.handoff;
   const next = businessLines(handoff?.next_step || handoff?.next_steps || handoff?.next || (typeof handoff === 'string' ? handoff : null))[0];
-  return next ? {label:lang === 'en' ? 'Next' : '下一步',message:next} : {message:item.summary || (lang === 'en' ? 'No progress notes yet' : '暂无当前进展记录')};
+  return next ? {label:lang === 'en' ? 'Next' : '下一步',message:next} : {message:tSummary(item.summary) || (lang === 'en' ? 'No progress notes yet' : '暂无当前进展记录')};
 }
 function renderTasks(values) {
   taskValues = list(values);
@@ -1590,7 +1648,7 @@ function renderTasks(values) {
       const activityDesc = hbInfo && hbMs !== null
         ? (lang === 'en' ? ' · Hook heartbeat: ' : ' · 会话心跳：') + new Date(hbMs).toLocaleTimeString(lang === 'en' ? 'en-US' : 'zh-CN') + (hbInfo.event ? ' (' + hbInfo.event + (hbInfo.tool ? '/' + hbInfo.tool : '') + ')' : '')
         : (lang === 'en' ? ' · Activity unknown (no heartbeat)' : ' · 活动未知（无退出或心跳证据）');
-      context.append(element('p',item.summary || (lang === 'en' ? 'No phase summary' : '暂无阶段说明')),
+      context.append(element('p',tSummary(item.summary) || (lang === 'en' ? 'No phase summary' : '暂无阶段说明')),
         element('p',list(item.flow).map(p => (p.current ? '▶ ' : '') + phaseName(p.id)).join(' → '),'muted'),
         element('p',(lang === 'en' ? 'Updated: ' : '更新时间：') + text(item.updated_at) + activityDesc,'muted'),
         element('p',lang === 'en' ? 'Stored evidence only; review pass is not human delivery.' : '证据为保存记录，当前文件新鲜度未核验；评审通过不是交付。','legend'),sourceNode(item.source));
@@ -1638,12 +1696,31 @@ function applyMotionPreference() {
   const btn = byId('motion-toggle');
   if (btn) btn.textContent = lang === 'en' ? (motionReduced ? 'Motion: Off' : 'Motion: On') : (motionReduced ? '动效：关' : '动效：开');
 }
+let polling = false, timer, lastSuccess = null, lastPayload = null;
 function applyChromeLang() {
   const en = lang === 'en';
+  if (typeof document !== 'undefined') {
+    if (document.documentElement) document.documentElement.lang = en ? 'en' : 'zh-CN';
+    document.title = en ? 'SpecLock · Workflow Dashboard' : 'SpecLock · 工作流看板';
+  }
   applyMotionPreference();
   byId('lang-toggle').textContent = en ? '中文' : 'EN';
   byId('live-tag').textContent = en ? 'Live · 2s' : '实时 · 2s';
   byId('refresh').textContent = en ? 'Refresh' : '立即刷新';
+  const updatedEl = byId('updated');
+  if (updatedEl) {
+    updatedEl.textContent = lastSuccess
+      ? (en ? 'Updated ' : '最近成功：') + lastSuccess.toLocaleTimeString(en ? 'en-US' : 'zh-CN')
+      : (en ? 'Refresh every 2s' : '每 2 秒刷新');
+  }
+  const connEl = byId('connection');
+  if (!lastSuccess && connEl && !connEl.hidden && connEl.className === 'notice') {
+    connEl.textContent = en ? 'Loading dashboard…' : '正在读取看板…';
+  }
+  const drawerEl = byId('drawer'), docTitleEl = byId('document-title');
+  if (drawerEl && drawerEl.hidden && docTitleEl) {
+    docTitleEl.textContent = en ? 'Document' : '文档';
+  }
   byId('lbl-task-overview').textContent = en ? 'Tasks' : '任务概览';
   byId('lbl-task-note').textContent = en ? 'Read-only projection from SQLite & docs' : '任务卡状态不等同于验证通过';
   byId('lbl-exec-mode').textContent = en ? 'Guardrails' : '执行模式';
@@ -1670,22 +1747,21 @@ function render(data) {
   byId('engine-state').textContent = stateLabel(mode.state);
   byId('engine-available').textContent = (lang === 'en' ? 'Source: ' : '可用性：') + (mode.available === true ? (lang === 'en' ? 'SQLite Ready' : '可用') : mode.available === false ? (lang === 'en' ? 'Unavailable' : '不可用，不降级为通过') : (lang === 'en' ? 'Unknown' : '未知'));
   const warnings = [];
-  if (mode.warning) warnings.push(text(mode.warning));
-  if (mode.migration_warning && mode.migration_warning !== mode.warning) warnings.push(text(mode.migration_warning));
+  if (mode.warning) warnings.push(tBackendMsg(text(mode.warning)));
+  if (mode.migration_warning && mode.migration_warning !== mode.warning) warnings.push(tBackendMsg(text(mode.migration_warning)));
   if (mode.available !== true) warnings.push(lang === 'en' ? 'Engine database unavailable; showing docs only.' : '未确认任务数据源可用。页面保留文档信息，不将其视为引擎批准或验证结果。');
   byId('warning').textContent = warnings.join('\n');
   byId('warning').hidden = !warnings.length;
   renderTasks(data.tasks);renderDocuments(data.documents);
   const issues = list(data.issues);
   byId('reading-issues').hidden = !issues.length;
-  byId('issues').replaceChildren(...issues.map(issue => element('li',issue)));
+  byId('issues').replaceChildren(...issues.map(issue => element('li',tBackendMsg(text(issue)))));
 }
 async function getJSON(url, signal) {
   const response = await fetch(url,{method:'GET',cache:'no-store',signal,headers:{Accept:'application/json'}});
   if (!response.ok) throw new Error('HTTP ' + response.status);
   return response.json();
 }
-let polling = false, timer, lastSuccess = null, lastPayload = null;
 async function refresh() {
   if (polling) return;
   polling = true;clearTimeout(timer);byId('refresh').disabled = true;
@@ -1693,7 +1769,7 @@ async function refresh() {
   const timeout = setTimeout(() => controller.abort(), 8000);
   try {
     const data = await getJSON('/api/dashboard',controller.signal);
-    if (!data || typeof data !== 'object' || Array.isArray(data) || !data.project || !data.mode || !['stages','tasks','pending','documents','issues'].every(key => Array.isArray(data[key]))) throw new Error('看板响应格式不正确');
+    if (!data || typeof data !== 'object' || Array.isArray(data) || !data.project || !data.mode || !['stages','tasks','pending','documents','issues'].every(key => Array.isArray(data[key]))) throw new Error(lang === 'en' ? 'Invalid dashboard response format' : '看板响应格式不正确');
     const payload = JSON.stringify(data);
     if (payload !== lastPayload) { render(data); lastPayload = payload; }
     else { updateIdleBots(); }
@@ -1702,7 +1778,11 @@ async function refresh() {
     byId('connection').hidden = true;
   } catch (error) {
     byId('connection').hidden = false;byId('connection').className = 'notice error';
-    byId('connection').textContent = '刷新失败：' + (error.name === 'AbortError' ? '请求超时' : text(error.message)) + '。' + (lastSuccess ? '当前保留 ' + lastSuccess.toLocaleTimeString('zh-CN') + ' 的旧数据，请勿视为实时状态。' : '尚无成功读取的数据。') + ' 2 秒后重试。';
+    if (lang === 'en') {
+      byId('connection').textContent = 'Refresh failed: ' + (error.name === 'AbortError' ? 'Request timed out' : text(error.message)) + '. ' + (lastSuccess ? 'Showing stale data from ' + lastSuccess.toLocaleTimeString('en-US') + ' — do not treat as live.' : 'No successful read yet.') + ' Retrying in 2s.';
+    } else {
+      byId('connection').textContent = '刷新失败：' + (error.name === 'AbortError' ? '请求超时' : text(error.message)) + '。' + (lastSuccess ? '当前保留 ' + lastSuccess.toLocaleTimeString('zh-CN') + ' 的旧数据，请勿视为实时状态。' : '尚无成功读取的数据。') + ' 2 秒后重试。';
+    }
   } finally {
     clearTimeout(timeout);polling = false;byId('refresh').disabled = false;
     timer = setTimeout(refresh,2000);
@@ -1719,13 +1799,13 @@ async function openDocument(path, title, trigger) {
   const timeout = setTimeout(() => controller.abort(),8000);
   try {
     const data = await getJSON('/api/document?path=' + encodeURIComponent(path),controller.signal);
-    if (!data || typeof data.content !== 'string' || typeof data.path !== 'string') throw new Error('文档响应格式不正确');
+    if (!data || typeof data.content !== 'string' || typeof data.path !== 'string') throw new Error(lang === 'en' ? 'Invalid document response format' : '文档响应格式不正确');
     if (version !== documentVersion) return;
     byId('document-content').textContent = data.content;
     byId('document-status').textContent = data.path + (lang === 'en' ? ' · Plain text, read-only' : ' · 纯文本，只读');
   } catch (error) {
     if (version !== documentVersion) return;
-    byId('document-status').textContent = (lang === 'en' ? 'Failed to load: ' : '文档读取失败：') + (error.name === 'AbortError' ? 'timeout' : text(error.message));
+    byId('document-status').textContent = (lang === 'en' ? 'Failed to load: ' : '文档读取失败：') + (error.name === 'AbortError' ? (lang === 'en' ? 'timeout' : '请求超时') : text(error.message));
   } finally {
     clearTimeout(timeout);
     if (version === documentVersion) documentController = null;
@@ -1750,6 +1830,20 @@ function populateStateOptions() {
   select.replaceChildren(...opts);
   select.value = prev;
 }
+function populateTierOptions() {
+  const select = byId('tier-filter');
+  const prev = select.value || 'all';
+  const tiers = lang === 'en'
+    ? [['all','All Tiers'],['light','Light'],['standard','Standard'],['full','Full'],['unknown','Unknown']]
+    : [['all','全部档位'],['light','轻量'],['standard','标准'],['full','完整'],['unknown','未知']];
+  const opts = tiers.map(([value, label]) => {
+    const option = element('option', label);
+    option.value = value;
+    return option;
+  });
+  select.replaceChildren(...opts);
+  select.value = prev;
+}
 byId('refresh').addEventListener('click',refresh);
 byId('motion-toggle').addEventListener('click',() => {
   motionReduced = !motionReduced;
@@ -1758,6 +1852,7 @@ byId('motion-toggle').addEventListener('click',() => {
 byId('lang-toggle').addEventListener('click',() => {
   lang = lang === 'en' ? 'zh' : 'en';
   populateStateOptions();
+  populateTierOptions();
   if (lastData) render(lastData); else applyChromeLang();
 });
 byId('close-document').addEventListener('click',closeDocument);
@@ -1767,6 +1862,7 @@ for (const id of ['state-filter','tier-filter']) byId(id).addEventListener('chan
 byId('clear-filter').addEventListener('click',() => { byId('task-filter').value = '';byId('state-filter').value = 'all';byId('tier-filter').value = 'all';renderTasks(taskValues);byId('task-filter').focus(); });
 applyChromeLang();
 populateStateOptions();
+populateTierOptions();
 refresh();
 </script>
 </body>

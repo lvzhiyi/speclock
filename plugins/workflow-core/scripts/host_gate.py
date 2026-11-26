@@ -25,7 +25,16 @@ SHELL_TOOLS = {"Bash", "shell", "exec_command", "run_shell_command", "Shell"}
 PLANNING_EDIT_TOOLS = {"Write", "Edit", "apply_patch"}
 EDIT_TOOLS = {"Edit", "Write", "MultiEdit", "NotebookEdit", "apply_patch"}
 TIER_LABELS = {"轻量档": "light", "标准档": "standard", "完整档": "full"}
+TIER_LABELS_EN = {
+    "light": "light",
+    "light tier": "light",
+    "standard": "standard",
+    "standard tier": "standard",
+    "full": "full",
+    "full tier": "full",
+}
 APPROVAL_ACCEPT_LABEL = "批准方案"
+APPROVAL_ACCEPT_LABELS_EN = {"approve proposal", "approve plan"}
 CODEX_CONFIRM_TOOLS = {"request_user_input", "request_user_input_async"}
 CHAT_REPLY_WRAPPERS = (
     ("**", "**"),
@@ -570,7 +579,7 @@ def parse_chat_confirmation_reply(prompt):
     if not isinstance(prompt, str):
         return None, None
     reply = normalize_chat_reply(prompt)
-    if reply == APPROVAL_ACCEPT_LABEL:
+    if is_approval_accept_label(reply, allow_recommended=False):
         return "approval", None
     tier = normalize_tier_label(reply)
     if tier:
@@ -607,7 +616,12 @@ def request_chat_confirmation(root, task, version, session, action, request):
         }
     save_pending(pending_path(root, session, "chat:"), pending, root=root)
     replies = ["选" + label for label in TIER_LABELS] if action == "tier_confirmation" else ["批准方案"]
-    return dict(pending, replies=replies, **extra, **hook_confirmation_status(root, session))
+    replies_en = (
+        ["Select Light Tier", "Select Standard Tier", "Select Full Tier"]
+        if action == "tier_confirmation"
+        else ["Approve Proposal"]
+    )
+    return dict(pending, replies=replies, replies_en=replies_en, **extra, **hook_confirmation_status(root, session))
 
 
 def _parse_async_question_reply(prompt):
@@ -803,6 +817,12 @@ def normalize_tier_label(label, allow_recommended=False):
         return TIER_LABELS[text]
     if text.startswith("选") and text[1:] in TIER_LABELS:
         return TIER_LABELS[text[1:]]
+    lowered = " ".join(text.lower().split())
+    if lowered in TIER_LABELS_EN:
+        return TIER_LABELS_EN[lowered]
+    for prefix in ("select ", "choose "):
+        if lowered.startswith(prefix) and lowered[len(prefix):] in TIER_LABELS_EN:
+            return TIER_LABELS_EN[lowered[len(prefix):]]
     return None
 
 
@@ -810,7 +830,7 @@ def is_approval_accept_label(label, allow_recommended=False):
     if not isinstance(label, str):
         return False
     text = _strip_recommended_suffix(label) if allow_recommended else label.strip()
-    return text == APPROVAL_ACCEPT_LABEL
+    return text == APPROVAL_ACCEPT_LABEL or " ".join(text.lower().split()) in APPROVAL_ACCEPT_LABELS_EN
 
 
 def offered_tiers(question):
@@ -902,9 +922,9 @@ def prepare_confirmation(event, root):
             if host == "codex" and tool == "request_user_input" and (not isinstance(question.get("id"), str) or not question["id"]):
                 return "ENGINE_CONFIRMATION_REQUIRED：Codex 原生确认问题须提供非空 id。"
             if action == "tier_confirmation" and host == "codex" and not offered_tiers(question):
-                return "ENGINE_CONFIRMATION_REQUIRED：定档请求须提供轻量档、标准档和完整档。"
+                return "ENGINE_CONFIRMATION_REQUIRED：定档请求须提供轻量档、标准档和完整档（英文对话可用 Light Tier / Standard Tier / Full Tier）。"
             if action == "approval" and not offered_approval(question):
-                return "ENGINE_CONFIRMATION_REQUIRED：方案批准单选须提供「批准方案」及至少一个不批准选项。"
+                return "ENGINE_CONFIRMATION_REQUIRED：方案批准单选须提供「批准方案」（或 Approve Proposal）及至少一个不批准选项。"
         review_file = None
         if action == "approval":
             missing = set(task.get("missing") or [])

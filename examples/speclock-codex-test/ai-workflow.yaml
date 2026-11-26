@@ -4,7 +4,7 @@ baseline:
     - docs/development/standards.md
 docs:
   product_root: docs/product
-  cards_dir: docs/product/任务
+  cards_dir: docs/product/tasks
   dev_docs: docs/development
 review:
   base_branch: develop

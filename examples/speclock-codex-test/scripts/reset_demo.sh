@@ -9,4 +9,4 @@ git checkout -- .
 git clean -fd
 
 git status -sb
-echo "已复位到录屏初始状态，可直接在 Codex 新开会话重录"
+echo "Reset to initial recording state; ready to start a new Codex session."

@@ -188,7 +188,7 @@ class ProtocolMixin:
             return None
         if not info or (not info['checked'] and info['status'] not in review_card.CLOSED):
             return None
-        human_settled = bool(info['checked'] or info['status'] in {'已验收', '已完成', '已交付'})
+        human_settled = bool(info['checked'] or info['status'] in {'已验收', '已完成', '已交付', 'Accepted', 'Completed', 'Delivered'})
         no_progress = (task['state'] in ('created', 'implementing') and not current(task)['attempts']
                        and all(t['status'] != 'done' for t in current(task)['todos']))
         return dict(binding=binding, status=info['status'], checked=info['checked'],

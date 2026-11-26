@@ -8,6 +8,8 @@ SpecLock is an AI development workflow plugin for **Codex, Claude Code, and Curs
 
 [Quick start](#quick-start-run-auth-r03) · [Workflow at a glance](#workflow-at-a-glance) · [What you get](#what-you-get-at-the-end-of-a-task) · [OpenSpec and Superpowers](#how-it-compares-to-openspec-and-superpowers)
 
+![SpecLock Architecture](docs/images/architecture.en.png)
+
 ## Quick start: run `AUTH-R03`
 
 Try adding token expiry and revocation in an example project, without touching your own code.

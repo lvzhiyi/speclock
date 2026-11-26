@@ -352,11 +352,21 @@ class HostGateTests(unittest.TestCase):
             ("批准方案", ("approval", None)),
             ("“批准方案”", ("approval", None)),
             ("**`批准方案`**", ("approval", None)),
+            ("Select Light Tier", ("tier_confirmation", "light")),
+            ("Select Standard Tier", ("tier_confirmation", "standard")),
+            ("Select Full Tier", ("tier_confirmation", "full")),
+            ("select full", ("tier_confirmation", "full")),
+            ("Approve Proposal", ("approval", None)),
+            ("**Approve Proposal**", ("approval", None)),
+            ("Approve Plan", ("approval", None)),
         )
         for text, expected in valid:
             with self.subTest(valid=text):
                 self.assertEqual(host_gate.parse_chat_confirmation_reply(text), expected)
-        rejected = ("我建议选完整档", "选标准档？", "**选标准档", "`选标准档` 吧", "请批准方案", "", None, 123)
+        rejected = (
+            "我建议选完整档", "选标准档？", "**选标准档", "`选标准档` 吧", "请批准方案",
+            "please approve proposal", "Select Light Tier?", "", None, 123,
+        )
         for text in rejected:
             with self.subTest(rejected=text):
                 self.assertEqual(host_gate.parse_chat_confirmation_reply(text), (None, None))
@@ -641,9 +651,16 @@ class HostGateTests(unittest.TestCase):
     def test_recommended_suffix_only_accepted_for_native_options(self):
         self.assertEqual(host_gate.normalize_tier_label("轻量档 (Recommended)", allow_recommended=True), "light")
         self.assertEqual(host_gate.normalize_tier_label("标准档（推荐）", allow_recommended=True), "standard")
+        self.assertEqual(host_gate.normalize_tier_label("Light Tier (Recommended)", allow_recommended=True), "light")
+        self.assertEqual(host_gate.normalize_tier_label("Full Tier", allow_recommended=True), "full")
         self.assertTrue(host_gate.is_approval_accept_label("批准方案 (Recommended)", allow_recommended=True))
+        self.assertTrue(host_gate.is_approval_accept_label("Approve Proposal (Recommended)", allow_recommended=True))
         self.assertEqual(host_gate.parse_chat_confirmation_reply("选轻量档 (Recommended)"), (None, None))
+        self.assertEqual(host_gate.parse_chat_confirmation_reply("Select Light Tier (Recommended)"), (None, None))
         self.assertEqual(host_gate.parse_chat_confirmation_reply("批准方案 (Recommended)"), (None, None))
+        self.assertEqual(host_gate.parse_chat_confirmation_reply("Approve Proposal (Recommended)"), (None, None))
+        self.assertTrue(host_gate.offered_tiers({"options": [{"label": "Light Tier"}, {"label": "Standard Tier (Recommended)"}, {"label": "Full Tier"}]}))
+        self.assertTrue(host_gate.offered_approval({"options": [{"label": "Approve Proposal (Recommended)"}, {"label": "Request Changes"}]}))
 
     def test_parse_async_question_reply(self):
         valid_payload = json.dumps(

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """自包含文档规范检查脚本（只读，仅依赖 Python 标准库，可直接提交至消费项目）。
 
-来源：workflow-core 0.28.2 (source-sha256: 1981ce077e3d)
+来源：workflow-core 0.28.8 (source-sha256: 44a50b1e5c8f)
 重新生成：python3 <workflow-core>/scripts/vendor_check_docs.py --output scripts/check_docs.py
 """
 
@@ -301,22 +301,24 @@ DEFAULT_CARD_ID = r'[A-Z][A-Z0-9]*-R\d+'
 # 子需求必填字段：字段名 → 匹配规则；与 templates/task-card.md 保持一致。
 CARD_REQUIRED = {
     '完成勾选框': re.compile(r'^- \[[ xX]\] ', re.M),
-    '来源': re.compile(r'^- 来源[：:]', re.M),
-    '验收': re.compile(r'^- 验收[：:]', re.M),
+    '来源': re.compile(r'^- (?:来源|Source)[：:]', re.M | re.I),
+    '验收': re.compile(r'^- (?:验收|Acceptance)[：:]', re.M | re.I),
 }
 
 # 勾选状态与协作状态字段提取（兼容独立“协作状态：”与旧式组合“协作状态 / ...：”首段）。
 CARD_CHECKED = re.compile(r'^- \[[xX]\] ', re.M)
 CARD_STATUS = re.compile(
-    r'^- (?:(?:协作状态|状态)(?:[ \t]*/[^：:\n]+)?[：:]|\*\*(?:协作状态|状态)\*\*[：:]|\*\*(?:协作状态|状态)[：:]\*\*)[ \t]*(.*?)'
+    r'^- (?:(?:协作状态|状态|Status)(?:[ \t]*/[^：:\n]+)?[：:]|\*\*(?:协作状态|状态|Status)\*\*[：:]|\*\*(?:协作状态|状态|Status)[：:]\*\*)[ \t]*(.*?)'
     r'[ \t]*(?:[；;/].*|<!--.*)?$',
-    re.M,
+    re.M | re.I,
 )
 
 # 命中以下非终态关键词时，不得同时勾选 [x]。
 NON_TERMINAL_STATUS_KEYWORDS = (
     '待处理', '待确认', '待验证', '待评审', '待人工验收', '待开发', '待实施',
     '未开始', '研发中', '实施中', '进行中', '评审未通过', '受阻', '阻塞', '已暂停', '已取消',
+    'pending', 'not started', 'in progress', 'implementing', 'blocked',
+    'review failed', 'pending human acceptance', 'pending verification', 'cancelled',
 )
 
 # 结构化「待确认」记录（含全角竖线「｜」）必须包含的段落。
@@ -425,7 +427,8 @@ def check_cards(root, cards_dir, card_id=DEFAULT_CARD_ID):
                 status_match = CARD_STATUS.search(section)
                 if status_match:
                     status_value = status_match.group(1).strip()
-                    if any(keyword in status_value for keyword in NON_TERMINAL_STATUS_KEYWORDS):
+                    lowered_status = status_value.lower()
+                    if any(keyword in lowered_status for keyword in NON_TERMINAL_STATUS_KEYWORDS):
                         errors.append(
                             f'{rel}: {cid} 完成勾选框已勾选，但协作状态仍为非终态「{status_value}」'
                         )

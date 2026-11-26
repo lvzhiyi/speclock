@@ -16,14 +16,19 @@ from .snapshot import capture, capture_files, fingerprint, sensitive
 
 
 STATUS = '评审通过，待人工验收'
-CLOSED = {'评审通过，待人工验收', '已验收', '已完成', '已交付'}
+STATUS_EN = 'Review Passed, Pending Human Acceptance'
+CLOSED = {
+    '评审通过，待人工验收', '已验收', '已完成', '已交付',
+    'Review Passed, Pending Human Acceptance', 'Accepted', 'Completed', 'Delivered',
+}
 MAX_BYTES = 1048576
 HEADING = re.compile(r'^ {0,3}(#{1,6})(?:[ \t]+(\S+)|[ \t]*$)')
 FENCE = re.compile(r'^ {0,3}(`{3,}|~{3,})(.*)$')
-LABEL = r'(?:协作状态|状态)'
+LABEL = r'(?:协作状态|状态|Status)'
 FIELD = re.compile(
     rf'^- (?:{LABEL}[：:]|\*\*{LABEL}\*\*[：:]|\*\*{LABEL}[：:]\*\*)[ \t]*(.*?)'
-    r'[ \t]*(?:(?:[；;][ \t]*(?:\*\*)?[\w /、-]+(?:\*\*)?[：:]|<!--).*)?$'
+    r'[ \t]*(?:(?:[；;][ \t]*(?:\*\*)?[\w /、-]+(?:\*\*)?[：:]|<!--).*)?$',
+    re.I,
 )
 CHECKED_BOX = re.compile(r'^- \[[xX]\] ')
 
@@ -92,7 +97,8 @@ def replace_status(data, card_id):
     if checked:
         raise EngineError('CARD_CONFLICT', '任务卡完成勾选框已勾选，不能回写为待人工验收状态')
     index, start, end = fields[0]
-    lines[index] = lines[index][:start] + STATUS + lines[index][end:]
+    next_status = STATUS_EN if re.search(r'\bstatus\b', lines[index][:start], re.I) else STATUS
+    lines[index] = lines[index][:start] + next_status + lines[index][end:]
     return ''.join(lines).encode('utf-8')
 
 

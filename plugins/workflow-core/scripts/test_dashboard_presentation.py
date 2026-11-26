@@ -80,6 +80,7 @@ class PresentationTests(unittest.TestCase):
         '''
         script = page_html().split("<script>")[1].split("</script>")[0].split("byId('refresh').addEventListener")[0]
         assertions = r'''
+        lang = 'zh';
         if(badge('review_passed').dataset.tone!=='good'||badge('passed').dataset.tone!=='good'||badge('failed').dataset.tone!=='bad'||badge('implementing').dataset.tone!=='active')throw Error('徽章色调映射错误');
         nodes['state-filter']=new Node('select');nodes['state-filter'].value='all';nodes['tier-filter']=new Node('select');nodes['tier-filter'].value='all';
         renderTasks([fixture]); const card=nodes.tasks.children[0];
@@ -151,6 +152,7 @@ class PresentationTests(unittest.TestCase):
             '''
             git_card = {"id": "BASE-UI07", "title": "用 easy_refresh 统一列表刷新加载", "state": "review_passed", "source": "docs/product/任务/全局组件.md:3"}
             checks = r'''
+            lang = 'zh';
             populateStateOptions();
             const optionValues = nodes['state-filter'].children.map(o => o.value);
             if (optionValues.includes('cancelled') || optionValues.includes('superseded')) throw Error('状态筛选不应包含已取消或已结案');
@@ -284,6 +286,7 @@ class PresentationTests(unittest.TestCase):
             '''
             script = html.split("<script>")[1].split("</script>")[0].split("byId('refresh').addEventListener")[0]
             checks = r'''
+            lang = 'zh';
             const nowSec = Math.floor(Date.now() / 1000);
             nodes['state-filter'] = new Node('select'); nodes['state-filter'].value = 'all';
             nodes['tier-filter'] = new Node('select'); nodes['tier-filter'].value = 'all';
@@ -312,6 +315,140 @@ class PresentationTests(unittest.TestCase):
             payload = f"\nconst fx={json.dumps(dict(r2=r2, r2Running=r2_running, waitingSignoff=waiting_signoff), ensure_ascii=False)};\n"
             result = subprocess.run(["node", "-e", stub + script + payload + checks], capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr)
+
+    @unittest.skipUnless(shutil.which("node"), "Node 不可用")
+    def test_lang_toggle_updates_tier_filter_and_en_text(self):
+        t_std = project_task(
+            dict(
+                id="T-STD", protocol_version=2, current_round="r", tier="standard",
+                goal="标准档目标", scope="标准档范围", acceptance=["验收通过"],
+                proposal=dict(goal="方案目标", risk="低风险", rollback="直接回滚"),
+                plan=dict(checks=[dict(id="unit", argv=["python3", "-m", "unittest"], cwd=".")]),
+                rounds=[dict(
+                    id="r", state="failed", phase="verification",
+                    todos=[dict(title="步骤一", status="done")],
+                    attempts=[dict(stage="verification", status="failed", results=[dict(id="unit", exit_code=1, reason="exit", stdout="out", stderr="err")])],
+                    evidence=[
+                        dict(kind="tier_confirmation", valid=True, data=dict(selected="standard")),
+                        dict(kind="review", valid=True, data=dict(axes=dict(spec=dict(conclusion="unknown", findings=[]), standards=dict(conclusion="unknown", findings=[])))),
+                    ],
+                )],
+            ),
+            dict(pending=[dict(question="确认范围", impact="影响发布", owner="研发", resume="确认后恢复", source="docs/a.md")]),
+        )
+        t_full = project_task(
+            dict(id="T-FULL", protocol_version=2, current_round="r", tier="full", goal="完整档任务", rounds=[dict(id="r", state="created", phase="planning", todos=[], attempts=[], evidence=[])]),
+            {},
+        )
+        payload_data = {
+            "project": {"name": "demo", "root": "/tmp/demo"},
+            "mode": {"binding": "bound", "available": False, "state": "unavailable", "warning": "引擎数据库不存在；未创建数据库"},
+            "stages": [],
+            "tasks": [t_std, t_full],
+            "pending": [],
+            "documents": [{"path": "docs/a.md", "title": "a", "exists": True}],
+            "issues": [],
+        }
+        html = page_html()
+        full_script = html.split("<script>")[1].split("</script>")[0]
+        stub = r'''class Node {
+          constructor(tag) { this.tag=tag;this.children=[];this.style={};this.dataset={};this.open=false;this.hidden=false;this.value='';this.content='';this.events={};this.isConnected=true;this.className=''; }
+          set textContent(v) { this.content=String(v);this.children=[]; }
+          get textContent() { return this.content+this.children.map(n=>n.textContent).join(' '); }
+          append(...nodes) { this.children.push(...nodes); }
+          replaceChildren(...nodes) { this.content='';this.children=nodes; }
+          addEventListener(name, handler) { this.events[name]=handler; }
+          toggle(open) { this.open=open;this.events.toggle?.(); }
+          focus() {}
+          click() { this.events.click?.(); }
+        }
+        const nodes={};
+        const document={
+          title:'',
+          documentElement:{lang:'zh-CN'},
+          body:new Node('body'),
+          createElement:tag=>new Node(tag),
+          getElementById:id=>nodes[id]||(nodes[id]=new Node('div')),
+          addEventListener:(name,handler)=>{},
+        };
+        nodes['state-filter']=new Node('select'); nodes['state-filter'].value='all';
+        nodes['tier-filter']=new Node('select'); nodes['tier-filter'].value='all';
+        nodes['task-filter']=new Node('input'); nodes['task-filter'].value='';
+        nodes['connection']=new Node('div'); nodes['connection'].className='notice';
+        nodes['drawer']=new Node('aside'); nodes['drawer'].hidden=true;
+        const setTimeout = () => 1;
+        const clearTimeout = () => {};
+        class AbortController { constructor() { this.signal={}; } abort() {} }
+        const fetch = async () => ({ ok: true, json: async () => mockDashboard });
+        function walk(n) { return [n,...n.children.flatMap(walk)]; }
+        function visible(n, excludeTechnical=false) {
+          if(excludeTechnical&&n.className==='technical')return '';
+          if(n.tag==='details'&&!n.open)return n.children.filter(c=>c.tag==='summary').map(c=>visible(c,excludeTechnical)).join(' ');
+          return n.content+' '+n.children.map(c=>visible(c,excludeTechnical)).join(' ');
+        }
+        '''
+        checks = r'''
+        (async () => {
+          await new Promise(r => setImmediate(r));
+          if (document.documentElement.lang !== 'en' || document.title !== 'SpecLock · Workflow Dashboard') {
+            throw Error('看板默认应为英文: ' + document.documentElement.lang + ' / ' + document.title);
+          }
+          if (nodes['lang-toggle'].textContent !== '中文') {
+            throw Error('英文模式下语言切换按钮应显示 中文');
+          }
+          if (nodes['lbl-tier-filter'].textContent !== 'Tier') {
+            throw Error('档位标签默认应为英文');
+          }
+          const tierOptsEn = nodes['tier-filter'].children.map(o => [o.value, o.textContent]);
+          if (JSON.stringify(tierOptsEn) !== JSON.stringify([['all','All Tiers'],['light','Light'],['standard','Standard'],['full','Full'],['unknown','Unknown']])) {
+            throw Error('默认英文档位选项异常: ' + JSON.stringify(tierOptsEn));
+          }
+          if (nodes['state-filter'].children[0].textContent !== 'All States') {
+            throw Error('默认状态下拉首项应为英文');
+          }
+          if (!nodes['warning'].textContent.includes('Engine database does not exist yet') || nodes['warning'].textContent.includes('引擎数据库不存在')) {
+            throw Error('默认英文模式下引擎告警未切换为英文: ' + nodes['warning'].textContent);
+          }
+          nodes['tier-filter'].value = 'standard';
+          nodes['tier-filter'].events.change();
+          if (nodes.tasks.children.length !== 1 || nodes.tasks.children[0].dataset.taskId !== 'T-STD') {
+            throw Error('档位筛选 standard 未生效');
+          }
+          const card = nodes.tasks.children[0];
+          const taskDetails = walk(card).find(n => n.className === 'task-details');
+          taskDetails.toggle(true);
+          walk(card).filter(n => n.tag === 'details' && (n.className === 'business-section' || n.className === 'log')).forEach(d => d.toggle(true));
+          const enText = visible(card, true);
+          for (const expected of ['Pending: 确认范围', 'Goal: 标准档目标', 'Scope: 标准档范围', 'Tier Confirmation · Recorded (non-delivery)', 'Spec Compliance: Unknown (not confirmed passed)', 'Engineering Standards: Unknown (not confirmed passed)', 'Attempt #1 · Failed', 'Verification failed; inspect attempts & logs', 'stdout\nout\nstderr\nerr']) {
+            if (!enText.includes(expected)) throw Error('英文详情文案缺失: ' + expected + ' -> ' + enText);
+          }
+          for (const forbidden of ['待确认：', '目标：', '档位确认', '需求符合性', '工程规范', '第 1 次验证', '标准输出']) {
+            if (enText.includes(forbidden)) throw Error('英文模式下残留中文标签: ' + forbidden);
+          }
+          nodes['lang-toggle'].click();
+          const tierOptsZh = nodes['tier-filter'].children.map(o => [o.value, o.textContent]);
+          if (JSON.stringify(tierOptsZh) !== JSON.stringify([['all','全部档位'],['light','轻量'],['standard','标准'],['full','完整'],['unknown','未知']])) {
+            throw Error('切换中文后档位选项异常: ' + JSON.stringify(tierOptsZh));
+          }
+          if (nodes['tier-filter'].value !== 'standard' || document.documentElement.lang !== 'zh-CN') {
+            throw Error('切换中文后档位值或文档语言异常');
+          }
+          if (!nodes['warning'].textContent.includes('引擎数据库不存在；未创建数据库')) {
+            throw Error('切换中文后引擎告警未切换为中文: ' + nodes['warning'].textContent);
+          }
+          nodes['lang-toggle'].click();
+          const tierOptsBackEn = nodes['tier-filter'].children.map(o => [o.value, o.textContent]);
+          if (JSON.stringify(tierOptsBackEn) !== JSON.stringify([['all','All Tiers'],['light','Light'],['standard','Standard'],['full','Full'],['unknown','Unknown']])) {
+            throw Error('切回英文后档位选项未恢复: ' + JSON.stringify(tierOptsBackEn));
+          }
+          if (nodes['tier-filter'].value !== 'standard' || document.documentElement.lang !== 'en') {
+            throw Error('切回英文后档位值或文档语言异常');
+          }
+        })().catch(err => { console.error(err); process.exit(1); });
+        '''
+        payload = f"\nconst mockDashboard={json.dumps(payload_data, ensure_ascii=False)};\n"
+        result = subprocess.run(["node", "-e", stub + payload + full_script + checks], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
 
 
 if __name__ == "__main__":

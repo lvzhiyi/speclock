@@ -1,20 +1,20 @@
-"""认证核心模块单元测试，覆盖基础登录与令牌签发校验。"""
+"""Unit tests for the core auth module covering basic login and token issuance/verification."""
 import unittest
 
 from auth import TokenStore, login
 
 
 class AuthTests(unittest.TestCase):
-    """验证基础登录与 TokenStore 的核心行为。"""
+    """Verify core behavior of login and TokenStore."""
 
     def test_login(self) -> None:
-        """验证合法令牌返回 True，空串与空白串返回 False。"""
+        """Valid tokens return True; empty and whitespace-only strings return False."""
         self.assertTrue(login("ok"))
         self.assertFalse(login(""))
         self.assertFalse(login("   "))
 
     def test_issue_and_verify_token(self) -> None:
-        """验证签发令牌可成功校验，未知或空令牌校验失败。"""
+        """Issued tokens verify successfully; unknown or empty tokens fail verification."""
         store = TokenStore()
         token = store.issue_token("alice")
         self.assertTrue(token)
@@ -24,7 +24,7 @@ class AuthTests(unittest.TestCase):
         self.assertFalse(store.verify_token(""))
 
     def test_issue_token_rejects_empty_subject(self) -> None:
-        """验证签发令牌时传入空白主体会抛出 ValueError。"""
+        """Issuing a token for a whitespace-only subject raises ValueError."""
         store = TokenStore()
         with self.assertRaises(ValueError):
             store.issue_token("   ")

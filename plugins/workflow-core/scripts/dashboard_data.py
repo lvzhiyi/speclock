@@ -30,16 +30,22 @@ STAGES = (("prd", "需求接收"), ("breakdown", "需求拆解"), ("kickoff", "�
           ("proposal", "方案提案"), ("implementation", "实施"),
           ("verification", "验证"), ("review", "评审"), ("delivery", "交付"))
 STATES = {"已完成": "completed", "自测完成": "completed", "人工验收通过": "completed", "已验收": "completed", "已交付": "completed",
+          "accepted": "completed", "completed": "completed", "done": "completed", "delivered": "completed",
           "进行中": "in_progress", "实施中": "in_progress", "研发中": "in_progress",
+          "in progress": "in_progress", "implementing": "in_progress",
           "待处理": "pending", "待开始": "pending", "未开始": "pending", "待开发": "pending", "待联调": "pending",
+          "pending": "pending", "not started": "pending", "todo": "pending",
           "受阻": "blocked", "待确认": "blocked", "可评审": "ready",
+          "blocked": "blocked", "ready": "ready",
           "评审通过": "review_passed", "评审通过，待人工验收": "review_passed", "待人工验收": "review_passed",
+          "review passed": "review_passed", "review passed, pending human acceptance": "review_passed", "pending human acceptance": "review_passed",
           "实施完成待验证": "pending", "待验证": "pending",
-          "已取消": "cancelled", "通过": "passed", "失败": "failed"}
+          "已取消": "cancelled", "通过": "passed", "失败": "failed",
+          "cancelled": "cancelled", "passed": "passed", "failed": "failed"}
 KNOWN_STATES = {"unknown", "created", "ready", "running", "passed", "completed", "failed",
                 "stale", "cancelled", "pending", "in_progress", "blocked", "review_passed"}
 CARD = re.compile(r"^#{3,4}\s+([A-Za-z0-9_]*[A-Za-z][A-Za-z0-9_-]*-[A-Za-z]*[0-9]+[A-Za-z0-9_]*|[A-Za-z0-9][A-Za-z0-9_-]*-R[0-9]+)(?:\s+|[:：]\s*)(.+?)\s*$")
-FIELD = re.compile(r"^\s*-\s+(?:\*\*)?(状态|协作状态)(?:\*\*)?[:：]\s*(.+?)\s*$")
+FIELD = re.compile(r"^\s*-\s+(?:\*\*)?(状态|协作状态|Status)(?:\*\*)?[:：]\s*(.+?)\s*$", re.I)
 
 
 def _relative(value):
@@ -117,7 +123,8 @@ def _project_root(root):
 
 def _state(raw):
     raw = re.split(r"<!--|[;；]", raw, maxsplit=1)[0].strip().strip("*` ")
-    return STATES.get(raw, raw if raw in KNOWN_STATES else "unknown")
+    lowered = raw.lower()
+    return STATES.get(raw, STATES.get(lowered, lowered if lowered in KNOWN_STATES else "unknown"))
 
 
 def _evidence(item, state, source, issues):
@@ -170,12 +177,12 @@ def _parse(text, path, result, stage_map, task_map):
         if line.startswith("#"):
             current = None
         field = FIELD.match(line)
-        human_delivery = re.match(r"^- \[([ xX])\] 子(?:需求|任务)人工验收/交付完成(?:（.*）)?$", line)
+        human_delivery = re.match(r"^- \[([ xX])\] (?:子(?:需求|任务)人工验收/交付完成(?:（.*）)?|Subtask human acceptance/delivery completed(?:\s*\(.*\))?)$", line, re.I)
         # 人工验收独立于 Agent 主状态，未勾选不能撤销评审通过。
         if current is not None and human_delivery:
             current["human_delivery_completed"] = human_delivery.group(1).lower() == "x"
             current["human_delivery_source"] = source
-        checked = re.match(r"^- \[([ xX])\] 子(?:需求|任务)完成(?:（.*）)?$", line)
+        checked = re.match(r"^- \[([ xX])\] (?:子(?:需求|任务)完成(?:（.*）)?|Subtask completed(?:\s*\(.*\))?)$", line, re.I)
         if current is not None and field:
             _evidence(current, _state(field.group(2)), source, result["issues"])
         if current is not None and checked:

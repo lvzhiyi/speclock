@@ -1,7 +1,7 @@
-# AUTH-R03 API Token 过期与吊销校验
+# AUTH-R03 API Token Expiration & Revocation
 
-依据[认证模块任务卡](../../../product/任务/认证模块.md)，为内存 `TokenStore` 增加可选有效期和幂等吊销。实施范围包括 `src/auth.py`、`src/test_auth.py` 和本变更目录。持久化、跨进程吊销、登录入口及其他认证功能在本次范围之外。
+Per [Auth Module Task Cards](../../../product/tasks/auth-module.md), add optional TTL expiration and idempotent revocation to the in-memory `TokenStore`. The scope covers `src/auth.py`, `src/test_auth.py`, and this change directory. Persistence, cross-process revocation, login entrypoints, and other auth features are out of scope.
 
-现有签发调用可以继续省略有效期。新增和修改的方法须符合[技术设计](design.md)，重点核对到期时与超过期限后的行为，以及未到期令牌吊销后的校验结果。所有令牌比对使用 `hmac.compare_digest`。
+Existing `issue_token` calls may continue omitting `ttl_seconds`. New and updated methods must follow the [Technical Design](design.md), paying close attention to behavior at exact expiration vs. past expiration, and verification results for unexpired revoked tokens. All token comparisons must use `hmac.compare_digest`.
 
-按任务卡验收标准运行认证单测及文档配置检查。需要回滚时，撤回本任务对 `TokenStore`、测试和变更文档的改动。
+Run the auth unit tests and docs/config check per the task card acceptance criteria. To roll back, revert the changes made for this task across `TokenStore`, its tests, and these change docs.
