@@ -1,6 +1,6 @@
 # SpecLock
 
-[English](README.md) | **简体中文** · [演示视频](https://github.com/user-attachments/assets/6c399680-073c-4bd3-8bb2-d61fae7f9972) · [v0.29.0](docs/development/release-0.29.0.md)
+[English](README.md) | **简体中文** · [演示视频](https://github.com/user-attachments/assets/6c399680-073c-4bd3-8bb2-d61fae7f9972) · [完整演示 (YouTube)](https://youtu.be/ZKFB6Ni0aZ4) · [v0.29.0](docs/development/release-0.29.0.md)
 
 **AI 说「测试过了」还不够。SpecLock 要看到验证结果，才允许评审。**
 
@@ -38,6 +38,13 @@ SpecLock 是面向 **Codex、Claude Code 和 Cursor** 的 AI 开发工作流插�
    ```
 
 5. 按提示选**完整档**，看过方案后再批准。规定检查和评审通过后，任务卡会变成 **「评审通过，待人工验收」**，不会自动勾完成。
+
+<details>
+<summary>观看完整端到端演示（YouTube）</summary>
+
+[![SpecLock 完整演示视频（YouTube）](docs/images/youtube-thumbnail-zh.png)](https://youtu.be/ZKFB6Ni0aZ4)
+
+</details>
 
 ## 工作流一览
 

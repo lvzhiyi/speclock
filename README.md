@@ -1,6 +1,6 @@
 # SpecLock
 
-**English** | [简体中文](README.zh-CN.md) · [Demo video](https://github.com/user-attachments/assets/6c399680-073c-4bd3-8bb2-d61fae7f9972) · [v0.29.0](docs/development/release-0.29.0.md)
+**English** | [简体中文](README.zh-CN.md) · [Demo video](https://github.com/user-attachments/assets/6c399680-073c-4bd3-8bb2-d61fae7f9972) · [Full walkthrough (YouTube)](https://youtu.be/ZKFB6Ni0aZ4) · [v0.29.0](docs/development/release-0.29.0.md)
 
 **Your coding agent says the tests passed. SpecLock requires the results before it accepts a review.**
 
@@ -38,6 +38,13 @@ Try adding token expiry and revocation in an example project, without touching y
    ```
 
 5. Confirm the **Full** tier and approve the proposal after reviewing it. Once the required checks and review pass, the task card will say **Review Passed, Pending Human Acceptance**. It will not be checked off automatically.
+
+<details>
+<summary>Watch the full end-to-end walkthrough on YouTube</summary>
+
+[![SpecLock Full Walkthrough on YouTube](docs/images/youtube-thumbnail-en.png)](https://youtu.be/ZKFB6Ni0aZ4)
+
+</details>
 
 ## Workflow at a glance
 
