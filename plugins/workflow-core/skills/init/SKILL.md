@@ -5,7 +5,7 @@ description: 为项目生成或更新「工作流配置」`ai-workflow.yaml`，�
 
 # 初始化项目工作流配置与文档骨架
 
-下文的 `${CLAUDE_PLUGIN_ROOT}` 指当前技能所在的插件根目录。如果它没有被替换成绝对路径（如在 Codex 中），从已加载的 `SKILL.md` 路径向上三级定位，执行命令时直接代入绝对路径。
+下文的 `${CLAUDE_PLUGIN_ROOT}` 指当前技能所在的插件根目录。如果它没有被替换成绝对路径（如在 Codex 或 Cursor 中），从已加载的 `SKILL.md` 路径向上三级定位，执行命令时直接代入绝对路径。
 
 目标：自动识别项目情况，**只问识别不了的**，生成项目根目录的「工作流配置」`ai-workflow.yaml`，在 Agent 入口文件留一行指针，并补齐流程需要的文档骨架。配置和文档按项目写一次、提交进 git，团队共用。
 
@@ -14,7 +14,7 @@ description: 为项目生成或更新「工作流配置」`ai-workflow.yaml`，�
 
 ## 会话级规划登记（写入前必做）
 
-按 `workflow` 的「规划与实施分界」先列清本轮精确文件清单，再用真实宿主会话（Cursor `conversation_id` / Codex `CODEX_THREAD_ID` / Claude `session_id`，取不到即报告缺项、不编造）显式登记；登记后只通过原生 Write / Edit / apply_patch 写入，收尾、取消或交接前务必 `close`：
+按 `workflow` 的「规划与实施分界」先列清本轮精确文件清单，再用真实宿主会话（Cursor `conversation_id` / Codex `CODEX_THREAD_ID` / Claude `session_id`，取不到即报告缺项、不编造）显式登记；登记后只通过原生 Write / Edit / MultiEdit / StrReplace / apply_patch 写入，收尾、取消或交接前务必 `close`：
 
 ```bash
 WORKFLOW_HOST=HOST python3 "${CLAUDE_PLUGIN_ROOT}/scripts/workflow_planning_cli.py" open --root "项目绝对根" --session "${SESSION}" --operation init --path "精确目标.md" --ttl 1800
@@ -74,7 +74,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/skills/init/detect.sh" .
 1. 按 `${CLAUDE_PLUGIN_ROOT}/templates/ai-workflow.yaml` 的结构生成配置：保留模板头部的格式说明注释，删掉示例值，不适用的写“无”，未确认的写“待确认”。只写脚本和技能能直接取用的事实；规则类说明（如“iOS 仅在明确要求时验证”的理由）留在项目 `docs/`，不写进配置。
 2. 先展示「配置项 | 值 | 依据」表和将要写入的文件全文，等用户确认。
 3. 写入项目根目录 `ai-workflow.yaml`，然后在 Agent 入口文件加一行指针（如“工作流配置：根目录 `ai-workflow.yaml`”）：
-   - 优先写 `AGENTS.md`。在 Codex 中缺少它时新建；在 Claude Code 中，若项目只有独立的 `CLAUDE.md`，可更新该文件。
+   - 优先写 `AGENTS.md`。在 Codex 或 Cursor 中缺少它时新建；在 Claude Code 中，若项目只有独立的 `CLAUDE.md`，可更新该文件。
    - 两者都没有：新建 `AGENTS.md`，并询问是否同时新建只含 `@AGENTS.md` 的 `CLAUDE.md`。
    - 写入前用 `git check-ignore -v <文件>` 检查 `ai-workflow.yaml`、入口文件和 `docs/` 是否被忽略；被忽略时团队拿不到配置，先告诉用户命中的规则，由用户决定改 `.gitignore` 还是换位置，不擅自修改。
 4. 写完运行 `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_docs.py" --root . --check-config`：解析错误（退出码 2）或路径不存在必须修正后再交付。
@@ -122,7 +122,7 @@ docs/development/handoffs/<task-id>.md  其他档位首次跨会话交接时
 
 ## 5. 插件建议（可选）
 
-在 Codex 中，列出 `workflow-core` 和需要的维度插件，给出 README 的 Codex 安装入口。
+在 Codex 或 Cursor 中，列出 `workflow-core` 和需要的维度插件，给出 README 的对应宿主安装入口（Cursor 当前仅提供 `workflow-core` 插件清单）。
 
 在 Claude Code 中，根据识别结果给出建议的插件组合，例如 `flutter + pixso + apifox` → `preset-flutter-pixso-apifox`；没有对应 preset 时列出 `workflow-core` + 对应维度插件，并说明哪些维度暂时没有插件。
 

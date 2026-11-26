@@ -18,12 +18,13 @@ from workflow_config import load
 # 原生进度更新只改变宿主展示，不构成引擎通过证据或产品文件写入。
 READ_TOOLS = {
     "TodoWrite", "update_plan", "Read", "ReadFile", "Glob", "Grep", "rg", "LS",
+    "ListDir", "GlobFileSearch", "SemanticSearch", "ToolSearch",
     "WebSearch", "WebFetch", "Skill", "AskUserQuestion", "ExitPlanMode",
     "clocksleep", "clock.sleep", "clock:sleep", "clock__sleep", "sleep", "wait",
 }
 SHELL_TOOLS = {"Bash", "shell", "exec_command", "run_shell_command", "Shell"}
-PLANNING_EDIT_TOOLS = {"Write", "Edit", "apply_patch"}
-EDIT_TOOLS = {"Edit", "Write", "MultiEdit", "NotebookEdit", "apply_patch"}
+PLANNING_EDIT_TOOLS = {"Write", "Edit", "MultiEdit", "StrReplace", "apply_patch"}
+EDIT_TOOLS = {"Edit", "Write", "MultiEdit", "NotebookEdit", "StrReplace", "EditNotebook", "apply_patch"}
 TIER_LABELS = {"轻量档": "light", "标准档": "standard", "完整档": "full"}
 TIER_LABELS_EN = {
     "light": "light",
@@ -439,9 +440,9 @@ def detect_host():
         return explicit
     if os.environ.get("CODEX_THREAD_ID"):
         return "codex"
-    if os.environ.get("CURSOR_PROJECT_DIR") or os.environ.get("CURSOR_PLUGIN_ROOT"):
+    if any(os.environ.get(k) for k in ("CURSOR_PROJECT_DIR", "CURSOR_PLUGIN_ROOT", "CURSOR_CONVERSATION_ID", "CURSOR_AGENT", "CURSOR_TRACE_ID")):
         return "cursor"
-    if os.environ.get("CLAUDE_PLUGIN_ROOT") or os.environ.get("CLAUDECODE"):
+    if any(os.environ.get(k) for k in ("CLAUDE_PLUGIN_ROOT", "CLAUDECODE", "CLAUDE_SESSION_ID")):
         return "claude"
     return None
 
@@ -490,7 +491,7 @@ def resolve_cli_session(session=None, task=None):
     """按显式参数、当前宿主会话环境变量、任务当前轮次绑定的优先级解析会话 ID。"""
     if isinstance(session, str) and session.strip():
         return session.strip()
-    for env_key in ("CODEX_THREAD_ID", "CLAUDE_SESSION_ID"):
+    for env_key in ("CODEX_THREAD_ID", "CLAUDE_SESSION_ID", "CURSOR_CONVERSATION_ID"):
         value = os.environ.get(env_key)
         if isinstance(value, str) and value.strip():
             return value.strip()
@@ -555,7 +556,7 @@ def hook_precheck_status(root, session=None, task=None, max_recent_age=600.0):
     return {
         "hook_active": None,
         "hook_events": [],
-        "hook_warning": "ENGINE_HOOK_SESSION_UNKNOWN：未能确定当前会话 ID，请传入 --session（Codex 为 CODEX_THREAD_ID，Cursor 为 conversation_id）以精确核对当前会话的 SpecLock Hook 状态。",
+        "hook_warning": "ENGINE_HOOK_SESSION_UNKNOWN：未能确定当前会话 ID，请传入 --session（Codex 为 CODEX_THREAD_ID，Claude Code 为 session_id，Cursor 为 conversation_id）以精确核对当前会话的 SpecLock Hook 状态。",
     }
 
 
@@ -612,7 +613,7 @@ def request_chat_confirmation(root, task, version, session, action, request):
         extra = {
             "review_display_path": format_review_path(root, review_file),
             "review_markdown": markdown,
-            "presentation_note": "请先在聊天回复正文中完整展示 review_markdown 全文并附上审阅稿路径，切勿压缩为简短摘要，再引导用户回复「批准方案」。",
+            "presentation_note": "请先在聊天回复正文中完整展示 review_markdown 全文并附上审阅稿路径，切勿压缩为简短摘要，再引导用户回复「批准方案」（英文会话用「Approve Proposal」）。",
         }
     save_pending(pending_path(root, session, "chat:"), pending, root=root)
     replies = ["选" + label for label in TIER_LABELS] if action == "tier_confirmation" else ["批准方案"]
@@ -833,6 +834,13 @@ def is_approval_accept_label(label, allow_recommended=False):
     return text == APPROVAL_ACCEPT_LABEL or " ".join(text.lower().split()) in APPROVAL_ACCEPT_LABELS_EN
 
 
+def is_claude_confirm_label(label):
+    if not isinstance(label, str):
+        return False
+    text = _strip_recommended_suffix(label)
+    return text == "确认" or text.lower() == "confirm"
+
+
 def offered_tiers(question):
     labels = option_labels(question)
     if not labels or len(labels) != 3:
@@ -858,6 +866,8 @@ def extract_native_answer(host, question, response):
         prompt_text = question_prompt_text(question)
         if prompt_text:
             keys.append(prompt_text)
+        if host == "claude" and isinstance(question.get("header"), str) and question["header"].strip():
+            keys.append(question["header"])
         answer = None
         for key in keys:
             if key in answers:
@@ -976,7 +986,7 @@ def complete_confirmation(event):
     expected_marker = "workflow-confirm:" + pending["task"] + ":" + pending["round"] + ":" + pending["digest"] + ":" + pending["action"]
     if markers != [expected_marker] or text.count("workflow-confirm:") != 1:
         return CONFIRM_HELP
-    if host == "codex" and isinstance(response, str):
+    if host in {"codex", "claude"} and isinstance(response, str):
         try:
             response = json.loads(response)
         except ValueError:
@@ -999,7 +1009,7 @@ def complete_confirmation(event):
             return ASYNC_PENDING_MSG
         if answer is not None and offered_tiers(question) and not question.get("multiSelect"):
             tier = normalize_tier_label(answer, allow_recommended=True)
-        accepted = tier is not None or (host == "claude" and answer == "确认" and not offered_tiers(question))
+        accepted = tier is not None or (host == "claude" and is_claude_confirm_label(answer) and not offered_tiers(question))
     elif pending["tool"] == "ExitPlanMode":
         accepted = response.get("approved") is True
     else:
@@ -1075,7 +1085,7 @@ def targets(event, root):
     """从受支持编辑工具提取真实目标；不明确的写入按整个任务范围检查。"""
     data = event.get("tool_input") or {}
     values = []
-    for key in ("file_path", "path", "target_file", "notebook_path"):
+    for key in ("file_path", "path", "target_file", "notebook_path", "target_notebook"):
         if data.get(key):
             values.append(data[key])
     if event.get("tool_name") == "apply_patch":

@@ -9,7 +9,14 @@ import sqlite3
 import sys
 import uuid
 
-TIER_MAP = {'轻量': 'light', '标准': 'standard', '完整': 'full'}
+TIER_MAP = {
+    '轻量': 'light',
+    '标准': 'standard',
+    '完整': 'full',
+    'light': 'light',
+    'standard': 'standard',
+    'full': 'full',
+}
 CONFIRM_ACTIONS = ('confirm-plan', 'confirm-tier', 'approve-proposal', 'return-task')
 
 
@@ -34,7 +41,7 @@ def parser():
     result.add_argument('--db')
     commands = result.add_subparsers(dest='action', required=True, parser_class=Parser)
     hooks_command = commands.add_parser('check-hooks', help='前置检查当前会话的 SpecLock Hook 是否已授权并运行')
-    hooks_command.add_argument('--session', default=None, help='可选：当前宿主会话 ID（Codex 默认读取 CODEX_THREAD_ID）')
+    hooks_command.add_argument('--session', default=None, help='可选：当前宿主会话 ID（Codex 默认读取 CODEX_THREAD_ID，Claude Code 读取 CLAUDE_SESSION_ID，Cursor 读取 CURSOR_CONVERSATION_ID）')
     list_command = commands.add_parser('list')
     list_command.add_argument('--active', action='store_true', help='仅显示未终态的活动任务')
     list_command.add_argument('--session', default=None, help='可选：当前宿主会话 ID，用于内联钩子状态检查')
@@ -53,7 +60,7 @@ def parser():
         if action == 'begin':
             command.add_argument('--version', type=int, default=None, help='可选 CAS 版本号；省略时按当前版本检查')
         if action in ('create', 'prepare'):
-            command.add_argument('--tier', choices=('轻量', '标准', '完整'), required=True)
+            command.add_argument('--tier', choices=tuple(TIER_MAP.keys()), required=True)
             command.add_argument('--acceptance', action='append', required=True)
             for name in ('plan', 'details'):
                 group = command.add_mutually_exclusive_group(required=(action == 'create' or name == 'details'))

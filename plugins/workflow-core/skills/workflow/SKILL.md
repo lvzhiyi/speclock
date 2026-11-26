@@ -9,9 +9,9 @@ description: 任务级工作流总入口。开发、文档、Bug、重构或续�
 
 ## Cursor 宿主
 
-Cursor 使用 `${CURSOR_PLUGIN_ROOT}` 定位插件（仅在插件配置中展开；执行 Shell 命令时须使用 `SKILL.md` 定位或 `sessionStart` 给出的绝对路径，不得在命令中保留 `$` 变量）；执行本插件引擎 CLI 前每次显式添加 `WORKFLOW_HOST=cursor`，使用插件脚本绝对路径和项目 `--root`。不要依赖 hook 子进程为后续 Shell 设置环境。项目状态默认保存在项目内 `.speclock/`（支持通过 `WORKFLOW_ENGINE_HOME` 或 `--db` 指定外部库；如使用外部库须保证门禁、CLI 与看板一致）。Cursor conversation_id 对应 bind-executor 的 session；多根由 CURSOR_PROJECT_DIR 或 Shell working_directory 明确选择。
+Cursor 使用 `${CURSOR_PLUGIN_ROOT}` 定位插件（仅在插件配置中展开；执行 Shell 命令时须使用 `SKILL.md` 定位或 `sessionStart` 给出的绝对路径，不得在命令中保留 `$` 变量）；执行本插件引擎 CLI 前每次显式添加 `WORKFLOW_HOST=cursor`，使用插件脚本绝对路径和项目 `--root`。`sessionStart` 会注入 `Cursor conversation_id` 与环境变量 `CURSOR_CONVERSATION_ID`（可直接作为 `check-hooks` / `bind-executor` / `prepare` 的会话 ID）。项目状态默认保存在项目内 `.speclock/`（支持通过 `WORKFLOW_ENGINE_HOME` 或 `--db` 指定外部库；如使用外部库须保证门禁、CLI 与看板一致）。Cursor conversation_id 对应 bind-executor 的 session；多根由 CURSOR_PROJECT_DIR 或 Shell working_directory 明确选择。
 
-Cursor 在 Agent 聊天里收集档位和方案批准，见下方「在 Agent 窗口定档」。Read 输出不能自动登记基线，必须 CLI read-baseline。Task 放行只验证父任务，子 Agent 的工具回调和会话绑定须独立核实，不承诺全写路径覆盖。看板 CLI 同样加 `WORKFLOW_HOST=cursor`。详情见仓库 `docs/development/cursor-adapter.md`。
+Cursor 在 Agent 聊天里收集档位和方案批准，支持中文（`选轻量档` / `选标准档` / `选完整档`、`批准方案`）与英文（`Select Light Tier` / `Select Standard Tier` / `Select Full Tier`、`Approve Proposal`），其中 `request-confirmation --kind approval` 会自动生成 `.speclock/reviews/` 审阅稿，详见下方「在 Agent 窗口定档」。规划态与实施态均支持 Cursor `StrReplace` 编辑工具。Read 输出不能自动登记基线，必须 CLI read-baseline。Task 放行只验证父任务，子 Agent 的工具回调和会话绑定须独立核实，不承诺全写路径覆盖。看板 CLI 同样加 `WORKFLOW_HOST=cursor`。详情见仓库 `docs/development/cursor-adapter.md`。
 
 ## 规则与输入
 
@@ -59,18 +59,18 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/workflow_engine_cli.py" --root "项目根
 
 ### 在 Agent 窗口定档
 
-先绑定会话并读取 `status`。只有当前轮次缺少 `tier_confirmation` 才邀请用户定档。向用户展示当前任务、实施范围、推荐档位及三个档位的影响。选项标签固定为 `轻量档`、`标准档`、`完整档`，在问题正文或选项说明里标出推荐，保留标签原文。用户选中一项即完成定档。
+先绑定会话并读取 `status`。只有当前轮次缺少 `tier_confirmation` 才邀请用户定档。向用户展示当前任务、实施范围、推荐档位及三个档位的影响。选项标签跟随会话语言固定为 `轻量档` / `标准档` / `完整档`（英文会话用 `Light Tier` / `Standard Tier` / `Full Tier`），在问题正文或选项说明里标出推荐，保留标签原文。用户选中一项即完成定档。
 
 - **前置检查 `hooks.hook_active`（所有窗口定档与方案批准的共同前提）**：在调用原生单选卡片或发起聊天确认前，必须先核对 `check-hooks` 或 `list` / `status` / `prepare` / `bind-executor` / `resume` 返回的 `hooks.hook_active`：
-  - 若 `hooks.hook_active` 为 `false`（含 `hooks.hook_warning`）：**禁止调用 `request_user_input` / `request_user_input_async` / `AskUserQuestion` 原生单选卡片，也不要让用户反复发送聊天口令**。回复用户时**必须先写明宿主钩子授权步骤**（如 Codex 的 **Settings → Hooks** 或 `/hooks` 重新信任并启用 `workflow-core@speclock` 的全部钩子，特别是升级插件版本后需重新信任，然后**新开/重启会话**），**不得省略授权指引只给终端命令**；交互终端 `confirm-tier` / `approve-proposal` 作为备选一并给出。
-  - 若 `hooks.hook_active` 为 `null`（`ENGINE_HOOK_SESSION_UNKNOWN`）：传入宿主真实 `--session`（Codex 为 `CODEX_THREAD_ID`，Cursor 为 `conversation_id`）重新执行 `check-hooks` 或入口命令核对。
+  - 若 `hooks.hook_active` 为 `false`（含 `hooks.hook_warning`）：**禁止调用 `request_user_input` / `request_user_input_async` / `AskUserQuestion` 原生单选卡片，也不要让用户反复发送聊天口令**。回复用户时**必须先写明宿主钩子授权步骤**（如 Codex 的 **Settings → Hooks** 或 `/hooks` 重新信任并启用 `workflow-core@speclock` 的全部钩子，Claude Code 确认 `/hooks` 中已启用 `workflow-core` 的 `SessionStart` / `UserPromptSubmit` / `PreToolUse` / `PostToolUse` 钩子，Cursor 确认已启用 `workflow-core` 插件与 `hooks/cursor.json`，特别是升级插件版本后需重新信任，然后**新开/重启会话**），**不得省略授权指引只给终端命令**；交互终端 `confirm-tier` / `approve-proposal` 作为备选一并给出。
+  - 若 `hooks.hook_active` 为 `null`（`ENGINE_HOOK_SESSION_UNKNOWN`）：传入宿主真实 `--session`（Codex 为 `CODEX_THREAD_ID`，Claude Code 为 `SessionStart` 注入的 `session_id` / `CLAUDE_SESSION_ID`，Cursor 为 `sessionStart` 注入的 `conversation_id` / `CURSOR_CONVERSATION_ID`）重新执行 `check-hooks` 或入口命令核对。
   - 仅当 `hooks.hook_active` 为 `true` 时，才按以下顺序发起窗口内确认。
 - **优先使用宿主原生单选卡片**（在 `hooks.hook_active` 为 `true` 且具备原生单选工具时，不要直接走 `prepare --request-tier` 让用户手打口令）：
   - Claude Code 使用 `AskUserQuestion` 的单个 `multiSelect: false` 问题。
   - Codex 优先调用当前会话提供的原生单选卡片：支持 `request_user_input`（单个带非空 `id` 的问题）或 `request_user_input_async`（单个含 `title` 与字符串 `options` 的问题，推荐在 Default 模式下优先使用 `request_user_input_async`）。
   - **重要（Codex `request_user_input_async` 保持回合规则）**：Codex 的异步弹窗仅在当前回合活跃期间显示；调用 `request_user_input_async` 后**不要紧接着输出 `final_answer` 结束回合**（否则弹窗会立即消失），应调用 `clock.sleep`（如 `30000` 毫秒，必要时可继续等待）保持回合等待用户点击。用户点击后回执会通过 `<send_user_message_question_reply>` 到达并由 SpecLock 钩子自动入库；收到回复后务必调用 `status` 核实回执已落库（若仍未确认，再通过下方 `request-confirmation` 引导用户发送纯文本口令：`选轻量档`/`选标准档`/`选完整档` 或英文 `Select Light Tier`/`Select Standard Tier`/`Select Full Tier`）。
   - 两端的问题正文（`question` 或 `title`）均包含当前 `workflow-confirm:<任务ID>:<轮次ID>:<control_digest>:tier_confirmation`，标记前后用空白隔开，选项标签**跟随当前会话语言**：中文会话使用 `轻量档`、`标准档`、`完整档`（`request_user_input_async` 亦兼容 `选轻量档`/`选标准档`/`选完整档`）；英文会话使用 `Light Tier`、`Standard Tier`、`Full Tier`（或 `Select Light Tier`/`Select Standard Tier`/`Select Full Tier`）；原生单选卡片均兼容 `(Recommended)` / `（推荐）` 后缀。使用真实工具 schema，收到用户选择后从 `status` 核实回执已入账。
-- **仅在 `hooks.hook_active` 为 `true` 但无法使用原生单选（或异步弹窗点击未被自动登记）时降级为聊天回复**：Cursor，或 Claude Code / Codex 当前会话缺少原生单选工具、钩子未收到匹配回执时，再使用聊天回复。Agent 先运行下面的命令登记当前版本（聊天确认已使用宿主无关通道，漏传 `WORKFLOW_HOST` 不会写错通道；显式传入仍受支持），并再次核对返回中的 `confirmation.hook_active`。若 `hook_active` 为 `false`（返回含 `hook_warning`），**不要让用户反复发送聊天口令**，应先写明宿主授权指引（如 Codex 的 Settings → Hooks 或 `/hooks` 重新信任 `workflow-core@speclock` 后新开会话），再一并提供交互终端 `confirm-tier` 命令。当 `hook_active` 为 `true` 时，在同一会话展示三个选项，跟随会话语言以纯文本呈现 `选轻量档`/`选标准档`/`选完整档`（英文会话用 `Select Light Tier`/`Select Standard Tier`/`Select Full Tier`）引导用户单独回复（避免外加 `**` 与反引号组合包裹造成复制困惑；钩子本身也已兼容常见成对 Markdown/引号包裹）。用户直接发消息即可，命令由 Agent 执行。
+- **仅在 `hooks.hook_active` 为 `true` 但无法使用原生单选（或异步弹窗点击未被自动登记）时降级为聊天回复**：Cursor，或 Claude Code / Codex 当前会话缺少原生单选工具、钩子未收到匹配回执时，再使用聊天回复。Agent 先运行下面的命令登记当前版本（聊天确认已使用宿主无关通道，漏传 `WORKFLOW_HOST` 不会写错通道；显式传入仍受支持），并再次核对返回中的 `confirmation.hook_active`。若 `hook_active` 为 `false`（返回含 `hook_warning`），**不要让用户反复发送聊天口令**，应先写明宿主授权指引（如 Codex 的 Settings → Hooks 或 `/hooks`、Claude Code 的 `/hooks`、Cursor 的插件钩子设置重新启用 `workflow-core` 后新开会话），再一并提供交互终端 `confirm-tier` 命令。当 `hook_active` 为 `true` 时，在同一会话展示三个选项，跟随会话语言以纯文本呈现 `选轻量档`/`选标准档`/`选完整档`（英文会话用 `Select Light Tier`/`Select Standard Tier`/`Select Full Tier`）引导用户单独回复（避免外加 `**` 与反引号组合包裹造成复制困惑；钩子本身也已兼容常见成对 Markdown/引号包裹）。用户直接发消息即可，命令由 Agent 执行。
 
 ```bash
 WORKFLOW_HOST=codex python3 "${CLAUDE_PLUGIN_ROOT}/scripts/workflow_engine_cli.py" \
@@ -83,7 +83,7 @@ WORKFLOW_HOST=codex python3 "${CLAUDE_PLUGIN_ROOT}/scripts/workflow_engine_cli.p
 完整档按 `tiering` 在会话中完整展示提案、技术设计、实施步骤与验证计划，再单独批准。发起批准前须先确认 `hooks.hook_active` 为 `true`（为 `false` 时禁止调用原生单选工具，必须先写明宿主授权与重启会话步骤，再附终端 `approve-proposal` 备选），确认钩子活跃后：
 - **强制前置步骤（原生点选批准前必做）**：先运行 `render-md --task "任务ID" --save` 导出当前版本的只读审阅稿到 `.speclock/reviews/`（仅保存文件，不弹出外部窗口；未运行或版本/摘要变化后未重新导出时，`PreToolUse` 会以 `ENGINE_APPROVAL_REVIEW_REQUIRED` 拒绝发起批准卡片）。接着在发起批准卡片的**同一条或紧邻上一条聊天回复正文**中，把已登记的完整方案（方案目标、技术设计 `design`、方案范围/非目标、影响、风险与边界、回滚方案、验收标准、仓库 `scope`、实施步骤、验证命令与审阅稿路径）完整展开给用户审阅，**严禁仅写一两句概括就弹出「批准方案」**。
 - **优先使用宿主原生点选**：
-  - Claude Code 可用 `ExitPlanMode`（在计划中包含 `workflow-confirm:<任务ID>:<轮次ID>:<control_digest>:approval`），或用 `AskUserQuestion` 的单个 `multiSelect: false` 问题。
+  - Claude Code 优先用 `AskUserQuestion` 的单个 `multiSelect: false` 问题（也兼容 `ExitPlanMode` 在计划中包含 `workflow-confirm:<任务ID>:<轮次ID>:<control_digest>:approval`），收到回执后用 `status` 核实是否落库；若宿主未回调或未登记，按下方降级为 `request-confirmation` 聊天回复。
   - Codex 优先调用 `request_user_input`（带非空 `id`）或 `request_user_input_async`（`title` + 字符串 `options`）；使用 `request_user_input_async` 时同样须调用 `clock.sleep`（如 `30000` 毫秒）保持回合等待点击，不要立即发送 `final_answer` 结束回合，收到回执后用 `status` 核实是否落库。
   - 使用 `AskUserQuestion`、`request_user_input` 或 `request_user_input_async` 发起方案批准时，问题正文（`question` 或 `title`）须说明审阅稿路径并包含 `workflow-confirm:<任务ID>:<轮次ID>:<control_digest>:approval`（前后用空白隔开），同时提供至少两个不重复选项：**跟随当前会话语言**使用 `批准方案`（或英文 `Approve Proposal`，均兼容 `(Recommended)` / `（推荐）` 后缀）及至少一个不批准选项（如 `需要修改` / `Request Changes`）。仅当用户选中 `批准方案` / `Approve Proposal` 时才会落库批准。
 - **降级聊天回复**：仅当当前会话缺少原生点选工具（如 Cursor，或 Codex/Claude Code 未暴露对应工具）或异步弹窗点击未被自动登记时，才降级使用上面的 `request-confirmation` 命令并改为 `--kind approval`（该命令会自动生成审阅稿并在返回中内联 `review_path` / `review_display_path` / `review_markdown`，不弹外部窗口）；先核对 `confirmation.hook_active` 为 `true`，并在聊天正文中完整展示 `review_markdown` 与审阅稿路径，再跟随会话语言以纯文本 `批准方案`（英文会话用 `Approve Proposal`）引导用户单独回复（钩子亦兼容常见成对 Markdown/引号包裹）。准备批准前使用最新版本，登记成功后以 `status` 为准。终端 `confirm-tier` 和 `approve-proposal` 保留给显式选择 CLI 的用户；终端交互确认会自动在状态目录 `reviews/` 下生成并弹出 Markdown 审阅稿（确认后输出简洁回执，支持 `--no-open`/`--json`），也可随时运行 `render-md --task <任务ID> [--open]` 导出只读审阅稿。

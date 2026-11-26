@@ -8,7 +8,7 @@ import subprocess
 import sys
 import uuid
 import unittest
-from unittest.mock import patch
+from unittest.mock import ANY, patch
 
 import host_gate
 
@@ -378,7 +378,7 @@ class HostGateTests(unittest.TestCase):
             "tier": "light",
         }
         with tempfile.TemporaryDirectory() as home:
-            base_env = {k: v for k, v in os.environ.items() if k not in {"WORKFLOW_HOST", "CODEX_THREAD_ID", "CURSOR_PROJECT_DIR", "CURSOR_PLUGIN_ROOT", "CLAUDE_PLUGIN_ROOT", "CLAUDECODE"}}
+            base_env = {k: v for k, v in os.environ.items() if k not in {"WORKFLOW_HOST", "CODEX_THREAD_ID", "CLAUDE_SESSION_ID", "CURSOR_PROJECT_DIR", "CURSOR_PLUGIN_ROOT", "CURSOR_CONVERSATION_ID", "CURSOR_AGENT", "CURSOR_TRACE_ID", "CLAUDE_PLUGIN_ROOT", "CLAUDECODE"}}
             base_env["WORKFLOW_ENGINE_HOME"] = home
             with patch.dict(os.environ, base_env, clear=True):
                 with self.assertRaises(Exception):
@@ -411,7 +411,7 @@ class HostGateTests(unittest.TestCase):
 
     def test_hook_activity_recording_and_confirmation_diagnostics(self):
         with tempfile.TemporaryDirectory() as home:
-            base_env = {k: v for k, v in os.environ.items() if k not in {"WORKFLOW_HOST", "CODEX_THREAD_ID", "CURSOR_PROJECT_DIR", "CURSOR_PLUGIN_ROOT", "CLAUDE_PLUGIN_ROOT", "CLAUDECODE"}}
+            base_env = {k: v for k, v in os.environ.items() if k not in {"WORKFLOW_HOST", "CODEX_THREAD_ID", "CLAUDE_SESSION_ID", "CURSOR_PROJECT_DIR", "CURSOR_PLUGIN_ROOT", "CURSOR_CONVERSATION_ID", "CURSOR_AGENT", "CURSOR_TRACE_ID", "CLAUDE_PLUGIN_ROOT", "CLAUDECODE"}}
             base_env["WORKFLOW_ENGINE_HOME"] = home
             with patch.dict(os.environ, {**base_env, "CODEX_THREAD_ID": "s1"}, clear=True):
                 inactive = host_gate.hook_confirmation_status(self.root, "s1")
@@ -565,7 +565,7 @@ class HostGateTests(unittest.TestCase):
 
     def test_hook_activity_heartbeat_throttle_and_stop_transition(self):
         with tempfile.TemporaryDirectory() as home:
-            env = {k: v for k, v in os.environ.items() if k not in {"WORKFLOW_HOST", "CODEX_THREAD_ID", "CURSOR_PROJECT_DIR", "CURSOR_PLUGIN_ROOT"}}
+            env = {k: v for k, v in os.environ.items() if k not in {"WORKFLOW_HOST", "CODEX_THREAD_ID", "CLAUDE_SESSION_ID", "CURSOR_PROJECT_DIR", "CURSOR_PLUGIN_ROOT", "CURSOR_CONVERSATION_ID", "CURSOR_AGENT", "CURSOR_TRACE_ID", "CLAUDE_PLUGIN_ROOT", "CLAUDECODE"}}
             env["WORKFLOW_ENGINE_HOME"] = home
             env["WORKFLOW_HOST"] = "claude"
             with patch.dict(os.environ, env, clear=True):
@@ -603,7 +603,7 @@ class HostGateTests(unittest.TestCase):
         proj.mkdir()
         clean_env = {
             k: v for k, v in os.environ.items()
-            if k not in {"WORKFLOW_HOST", "WORKFLOW_ENGINE_HOME", "CODEX_THREAD_ID", "CLAUDE_SESSION_ID", "CURSOR_PROJECT_DIR", "CURSOR_PLUGIN_ROOT", "CLAUDE_PLUGIN_ROOT", "CLAUDECODE"}
+            if k not in {"WORKFLOW_HOST", "WORKFLOW_ENGINE_HOME", "CODEX_THREAD_ID", "CLAUDE_SESSION_ID", "CURSOR_PROJECT_DIR", "CURSOR_PLUGIN_ROOT", "CURSOR_CONVERSATION_ID", "CURSOR_AGENT", "CURSOR_TRACE_ID", "CLAUDE_PLUGIN_ROOT", "CLAUDECODE"}
         }
         with patch.dict(os.environ, clean_env, clear=True):
             initial = host_gate.hook_precheck_status(proj)
@@ -689,3 +689,79 @@ class HostGateTests(unittest.TestCase):
                 {"questionItemId": bad_id, "question": "Q", "answer": "A"}
             ]) + "\n</send_user_message_question_reply>"
             self.assertIsNone(host_gate._parse_async_question_reply(bad_msg))
+
+    def test_claude_english_ask_user_question_header_and_string_response(self):
+        task = {**self.task("created", missing=["tier_confirmation"]), "control_digest": "digest", "tier": "light"}
+        tier_marker = "workflow-confirm:T1:r1:digest:tier_confirmation"
+        question_obj = {
+            "question": f"Select tier {tier_marker}",
+            "header": "Tier",
+            "multiSelect": False,
+            "options": [
+                {"label": "Light Tier"},
+                {"label": "Standard Tier (Recommended)"},
+                {"label": "Full Tier"},
+            ],
+        }
+        with tempfile.TemporaryDirectory() as home, patch.dict(os.environ, {"WORKFLOW_ENGINE_HOME": home, "WORKFLOW_HOST": "claude"}), patch.object(host_gate, "load_task", return_value=task), patch("workflow_engine.engine.Engine") as engine:
+            event = self.event("AskUserQuestion", questions=[question_obj])
+            event["tool_use_id"] = "call-en-tier"
+            self.assertIsNone(host_gate.pre_tool(event))
+            # header 键映射 + 字符串 JSON 响应均须正确解析并落库。
+            resp_event = dict(event, tool_response=json.dumps({"answers": {"Tier": "Standard Tier (Recommended)"}}))
+            self.assertIn("ENGINE_CONFIRMATION_RECORDED", host_gate.post_tool(resp_event))
+            engine.return_value.confirm_tier.assert_called_once_with("T1", 3, ANY, "claude 原生用户流程", "standard")
+
+            # 旧式二选一 "Confirm" / "Confirm (Recommended)" 在非三档问题下也可触发确认。
+            legacy_q = {"question": f"Confirm tier {tier_marker}", "header": "Confirm", "multiSelect": False, "options": [{"label": "Confirm (Recommended)"}, {"label": "Cancel"}]}
+            legacy_event = self.event("AskUserQuestion", questions=[legacy_q])
+            legacy_event["tool_use_id"] = "call-en-legacy"
+            self.assertIsNone(host_gate.pre_tool(legacy_event))
+            legacy_resp = dict(legacy_event, tool_response={"answers": {"Confirm": "Confirm (Recommended)"}})
+            self.assertIn("ENGINE_CONFIRMATION_RECORDED", host_gate.post_tool(legacy_resp))
+            self.assertEqual(engine.return_value.confirm_tier.call_count, 2)
+
+        # 英文方案批准（含 header 键 + 字符串 JSON 回执）。
+        approve_task = {**self.task("created", missing=["approval"]), "tier": "full", "control_digest": "digest"}
+        app_marker = "workflow-confirm:T1:r1:digest:approval"
+        app_q = {
+            "question": f"Approve proposal {app_marker}",
+            "header": "Approval",
+            "multiSelect": False,
+            "options": [{"label": "Approve Proposal (Recommended)"}, {"label": "Request Changes"}],
+        }
+        with tempfile.TemporaryDirectory() as home, patch.dict(os.environ, {"WORKFLOW_ENGINE_HOME": home, "WORKFLOW_HOST": "claude"}), patch.object(host_gate, "load_task", return_value=approve_task), patch("workflow_engine.engine.Engine") as engine:
+            import review_markdown
+            from workflow_engine_cli import default_db
+            review_markdown.write_review_markdown(default_db(self.root).parent, self.root, approve_task, review_markdown.render_review_markdown(approve_task))
+            app_event = self.event("AskUserQuestion", questions=[app_q])
+            app_event["tool_use_id"] = "call-en-approve"
+            self.assertIsNone(host_gate.pre_tool(app_event))
+            app_resp = dict(app_event, tool_response=json.dumps({"answers": {"Approval": "Approve Proposal (Recommended)"}}))
+            self.assertIn("ENGINE_CONFIRMATION_RECORDED", host_gate.post_tool(app_resp))
+            engine.return_value.approve_proposal.assert_called_once()
+
+    def test_cross_host_tools_and_session_env_detection(self):
+        with patch.object(host_gate, "load_task", side_effect=AssertionError("只读工具不应查询任务")):
+            for tool in ("ToolSearch", "SemanticSearch", "ListDir", "GlobFileSearch"):
+                self.assertIsNone(host_gate.pre_tool(self.event(tool)))
+
+        self.assertIn("MultiEdit", host_gate.PLANNING_EDIT_TOOLS)
+        self.assertIn("StrReplace", host_gate.PLANNING_EDIT_TOOLS)
+        self.assertIn("EditNotebook", host_gate.EDIT_TOOLS)
+        with patch("workflow_planning_cli.allows", side_effect=lambda _r, _s, paths: paths == ["docs/product/项目首页.md"]):
+            for tool in ("MultiEdit", "StrReplace"):
+                self.assertIsNone(host_gate.pre_tool(self.event(tool, file_path="docs/product/项目首页.md")))
+
+        clean = {
+            k: v for k, v in os.environ.items()
+            if k not in {"WORKFLOW_HOST", "CODEX_THREAD_ID", "CLAUDE_SESSION_ID", "CURSOR_PROJECT_DIR", "CURSOR_PLUGIN_ROOT", "CURSOR_CONVERSATION_ID", "CURSOR_AGENT", "CURSOR_TRACE_ID", "CLAUDE_PLUGIN_ROOT", "CLAUDECODE"}
+        }
+        with patch.dict(os.environ, {**clean, "CURSOR_CONVERSATION_ID": "conv-cur"}, clear=True):
+            self.assertEqual(host_gate.detect_host(), "cursor")
+            self.assertEqual(host_gate.resolve_cli_session(), "conv-cur")
+        with patch.dict(os.environ, {**clean, "CURSOR_AGENT": "1"}, clear=True):
+            self.assertEqual(host_gate.detect_host(), "cursor")
+        with patch.dict(os.environ, {**clean, "CLAUDE_SESSION_ID": "sess-cc"}, clear=True):
+            self.assertEqual(host_gate.detect_host(), "claude")
+            self.assertEqual(host_gate.resolve_cli_session(), "sess-cc")

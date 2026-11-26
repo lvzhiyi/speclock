@@ -110,8 +110,12 @@ def handle(payload):
         host_gate.context(event)
         return {"continue": True}
     if name == "PreToolUse":
-        if tool in {"Write", "Delete", "Edit"}:
+        if tool in {"Write", "Delete", "Edit", "StrReplace"}:
             values = [event["tool_input"][key] for key in ("file_path", "path", "target_file") if key in event["tool_input"]]
+            if not values or any(not isinstance(value, str) or not value.strip() for value in values):
+                return deny("ENGINE_TARGET_REQUIRED：写入目标 schema 不受支持")
+        elif tool == "EditNotebook":
+            values = [event["tool_input"][key] for key in ("file_path", "path", "target_file", "notebook_path", "target_notebook") if key in event["tool_input"]]
             if not values or any(not isinstance(value, str) or not value.strip() for value in values):
                 return deny("ENGINE_TARGET_REQUIRED：写入目标 schema 不受支持")
         if tool == "AskQuestion":
@@ -134,7 +138,7 @@ def handle(payload):
             f"引擎 CLI（每次运行须前缀 WORKFLOW_HOST=cursor，勿使用未展开的 ${{CURSOR_PLUGIN_ROOT}}）: {cli}\n"
             f"文档规划登记命令的 --session 使用上述会话 ID。\n{workflow_context}"
         )
-        return {"env": {"WORKFLOW_HOST": "cursor"}, "additional_context": bounded(context)}
+        return {"env": {"WORKFLOW_HOST": "cursor", "CURSOR_CONVERSATION_ID": event["session_id"]}, "additional_context": bounded(context)}
     if name == "PostToolUse":
         message = host_gate.context(event)
         return {"additional_context": bounded(message)} if message else {}

@@ -493,6 +493,107 @@ class GateTests(unittest.TestCase):
         self.assertIn("ENGINE_APPROVAL_REVIEW_REQUIRED", workflow_skill)
         self.assertIn("render-md", tiering_skill)
 
+    def test_claude_session_start_persists_env_and_english_end_to_end(self):
+        subprocess.run(["git", "init", "-q", str(self.project)], check=True)
+        (self.project / "rules.md").write_text("Standards body", encoding="utf-8")
+        (self.project / "ai-workflow.yaml").write_text(
+            "version: 1\n"
+            "baseline:\n"
+            "  required:\n"
+            "    - rules.md\n"
+            "verify:\n"
+            f"  light: {sys.executable} -c pass\n"
+            "  full: git status --short\n",
+            encoding="utf-8",
+        )
+        unconfigured = Path(self.tmp.name) / "unconfigured_repo"
+        unconfigured.mkdir()
+        env_file = Path(self.tmp.name) / "claude.env"
+        env_file.write_text("", encoding="utf-8")
+
+        base_env = {
+            k: v for k, v in os.environ.items()
+            if not k.startswith("WORKFLOW_") and k not in {"CODEX_THREAD_ID", "CLAUDE_SESSION_ID", "CURSOR_PROJECT_DIR", "CURSOR_PLUGIN_ROOT", "CURSOR_CONVERSATION_ID", "CURSOR_AGENT", "CURSOR_TRACE_ID", "CLAUDE_PLUGIN_ROOT", "CLAUDECODE"}
+        }
+        claude_env = {**base_env, "WORKFLOW_ENGINE_HOME": self.tmp.name, "CLAUDE_ENV_FILE": str(env_file)}
+
+        # 未接入项目 SessionStart 仍静默放行且不创建 .speclock/，但会写入 CLAUDE_ENV_FILE 供 /init 使用。
+        unconf_proc = subprocess.run(
+            [sys.executable, str(HERE / "workflow_gate.py")],
+            input=json.dumps({"session_id": "cc-unconf", "cwd": str(unconfigured), "hook_event_name": "SessionStart"}),
+            text=True, capture_output=True, env=claude_env,
+        )
+        self.assertEqual(unconf_proc.returncode, 0, unconf_proc.stderr)
+        self.assertEqual(unconf_proc.stdout, "")
+        self.assertFalse((unconfigured / ".speclock").exists())
+        env_text = env_file.read_text(encoding="utf-8")
+        self.assertIn("export WORKFLOW_HOST=claude", env_text)
+        self.assertIn("export CLAUDE_SESSION_ID=cc-unconf", env_text)
+
+        # 已接入项目 SessionStart 注入 Claude session_id 并写入最新会话到 CLAUDE_ENV_FILE。
+        env_file.write_text("", encoding="utf-8")
+        session = "cc-sess-e2e"
+        start_proc = subprocess.run(
+            [sys.executable, str(HERE / "workflow_gate.py")],
+            input=json.dumps({"session_id": session, "cwd": str(self.project), "hook_event_name": "SessionStart"}),
+            text=True, capture_output=True, env=claude_env,
+        )
+        self.assertEqual(start_proc.returncode, 0, start_proc.stderr)
+        start_ctx = json.loads(start_proc.stdout)["hookSpecificOutput"]["additionalContext"]
+        self.assertIn(f"Claude session_id: {session}", start_ctx)
+        self.assertIn("export CLAUDE_SESSION_ID=cc-sess-e2e", env_file.read_text(encoding="utf-8"))
+
+        self.assertEqual(self.hook("UserPromptSubmit", "claude", session_id=session, prompt="Run T-CC").returncode, 0)
+        cli = str(HERE / "workflow_engine_cli.py")
+        cli_env = {**base_env, "WORKFLOW_HOST": "claude", "CLAUDE_SESSION_ID": session, "WORKFLOW_ENGINE_HOME": self.tmp.name}
+
+        def run_cli(*args):
+            proc = subprocess.run([sys.executable, cli, "--root", str(self.project), *args], text=True, capture_output=True, env=cli_env)
+            self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+            return json.loads(proc.stdout)
+
+        checked = run_cli("check-hooks")
+        self.assertTrue(checked["hooks"]["hook_active"])
+        self.assertEqual(checked["hooks"]["hook_host"], "claude")
+        self.assertEqual(checked["hooks"]["session_id"], session)
+
+        details = {"goal": "Implement auth", "scope": ["src"], "source": "PRD", "dependencies": [], "steps": [{"id": "s1", "title": "Step 1"}]}
+        prep = run_cli("prepare", "--task", "T-CC", "--tier", "light", "--acceptance", "A1", "--details-json", json.dumps(details), "--executor", "claude", "--session", session)
+        task = prep["task"]
+        self.assertTrue(prep["hooks"]["hook_active"])
+
+        tier_marker = f"workflow-confirm:T-CC:{task['current_round']}:{task['control_digest']}:tier_confirmation"
+        tier_q = {
+            "question": f"Choose tier {tier_marker}",
+            "header": "Tier",
+            "multiSelect": False,
+            "options": [{"label": "Light Tier"}, {"label": "Standard Tier"}, {"label": "Full Tier (Recommended)"}],
+        }
+        tier_ev = dict(session_id=session, tool_name="AskUserQuestion", tool_input={"questions": [tier_q]}, tool_use_id="cc-tier-1")
+        self.assertEqual(self.hook("PreToolUse", "claude", **tier_ev).stdout, "")
+        self.assertIn("ENGINE_CONFIRMATION_RECORDED", self.hook("PostToolUse", "claude", **tier_ev, tool_response={"answers": {"Tier": "Full Tier (Recommended)"}}).stdout)
+
+        selected = run_cli("status", "--task", "T-CC")["task"]
+        self.assertEqual(selected["tier"], "full")
+
+        proposal = {k: "Detail" for k in ("goal", "design", "scope", "impact", "risk", "rollback", "acceptance")}
+        full_plan = {"version": 1, "checks": [{"id": "check-1", "argv": ["git", "status", "--short"], "cwd": ".", "timeout": 10, "covers": ["format", "analyze", "test"], "acceptance": ["A1"]}]}
+        updated = run_cli("update-task", "--task", "T-CC", "--version", str(selected["version"]), "--file-json", json.dumps({"proposal": proposal, "plan": full_plan}))["task"]
+        self.assertEqual(run_cli("render-md", "--task", "T-CC", "--save", "--json")["task_id"], "T-CC")
+
+        app_marker = f"workflow-confirm:T-CC:{updated['current_round']}:{updated['control_digest']}:approval"
+        app_q = {
+            "question": f"Approve proposal {app_marker}",
+            "header": "Approval",
+            "multiSelect": False,
+            "options": [{"label": "Approve Proposal (Recommended)"}, {"label": "Request Changes"}],
+        }
+        app_ev = dict(session_id=session, tool_name="AskUserQuestion", tool_input={"questions": [app_q]}, tool_use_id="cc-app-1")
+        self.assertEqual(self.hook("PreToolUse", "claude", **app_ev).stdout, "")
+        self.assertIn("ENGINE_CONFIRMATION_RECORDED", self.hook("PostToolUse", "claude", **app_ev, tool_response=json.dumps({"answers": {"Approval": "Approve Proposal (Recommended)"}})).stdout)
+        approved = run_cli("status", "--task", "T-CC")["task"]
+        self.assertNotIn("approval", approved["missing"])
+
 
 if __name__ == "__main__":
     unittest.main()

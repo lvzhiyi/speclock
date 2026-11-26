@@ -18,7 +18,7 @@ def main():
     failures = []
     env = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
     groups = ("plugins/workflow-core/scripts", "plugins/stack-flutter/scripts",
-              "plugins/workflow-core/scripts/tests_engine", "examples/workflow-sandbox/tests")
+              "plugins/workflow-core/scripts/tests_engine", "examples/speclock-codex-test/src")
     for group in groups:
         if not list((ROOT / group).glob("test_*.py")):
             failures.append("EMPTY_TEST_TARGET:" + group)
@@ -46,7 +46,7 @@ def main():
         else:
             targets = ["plugins/workflow-core/scripts/workflow_engine", "plugins/workflow-core/scripts/tests_engine",
                        "plugins/workflow-core/scripts/workflow_engine_cli.py", "plugins/workflow-core/scripts/engine_codex.py",
-                       "examples/workflow-sandbox/src", "examples/workflow-sandbox/tests", "scripts/check.py"]
+                       "examples/speclock-codex-test/src", "scripts/check.py"]
             for command in (["ruff", "format", "--check", *targets], ["ruff", "check", *targets]):
                 if subprocess.run(command, cwd=ROOT).returncode:
                     failures.append("LINT_FAILED")

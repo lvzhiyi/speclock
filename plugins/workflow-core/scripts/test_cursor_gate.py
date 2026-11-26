@@ -212,7 +212,7 @@ class CursorGateTests(unittest.TestCase):
 
     def test_lifecycle_outputs(self):
         result = self.call(dict(self.event(), hook_event_name="sessionStart", tool_input=None))
-        self.assertEqual(result["env"], {"WORKFLOW_HOST": "cursor"})
+        self.assertEqual(result["env"], {"WORKFLOW_HOST": "cursor", "CURSOR_CONVERSATION_ID": "conv-1"})
         self.assertIn("additional_context", result)
         self.assertIn(str((SCRIPTS / "workflow_engine_cli.py").resolve()), result["additional_context"])
         self.assertIn("prepare", result["additional_context"])
@@ -330,6 +330,7 @@ class CursorGateTests(unittest.TestCase):
     def test_manifest_contract(self):
         manifest = json.loads((SCRIPTS.parent / ".cursor-plugin/plugin.json").read_text())
         self.assertEqual(manifest["version"], json.loads((SCRIPTS.parent / ".codex-plugin" / "plugin.json").read_text())["version"])
+        self.assertEqual(manifest["version"], json.loads((SCRIPTS.parent / ".claude-plugin" / "plugin.json").read_text())["version"])
         self.assertEqual(manifest["hooks"], "./hooks/cursor.json")
         self.assertEqual(manifest["skills"], "./skills/")
         hooks = json.loads((SCRIPTS.parent / "hooks/cursor.json").read_text())["hooks"]
@@ -371,7 +372,7 @@ class CursorGateTests(unittest.TestCase):
         task = engine.create("T1", "light", ["A1"], plan, "create", details={"goal": "目标", "scope": ["src"], "source": "用户", "steps": [{"id": "s1", "title": "修改"}]})
         task = engine.bind_executor("T1", task["version"], "bind", "agent", "conv-1")
 
-        clean_env = {k: v for k, v in os.environ.items() if k not in {"WORKFLOW_HOST", "CODEX_THREAD_ID", "CURSOR_PROJECT_DIR", "CURSOR_PLUGIN_ROOT", "CLAUDE_PLUGIN_ROOT", "CLAUDECODE"}}
+        clean_env = {k: v for k, v in os.environ.items() if k not in {"WORKFLOW_HOST", "CODEX_THREAD_ID", "CLAUDE_SESSION_ID", "CURSOR_PROJECT_DIR", "CURSOR_PLUGIN_ROOT", "CURSOR_CONVERSATION_ID", "CURSOR_AGENT", "CURSOR_TRACE_ID", "CLAUDE_PLUGIN_ROOT", "CLAUDECODE"}}
         self.assertEqual(self.call(dict(self.event(conversation_id="conv-1"), hook_event_name="beforeSubmitPrompt", prompt="开始")), {"continue": True})
 
         def request(current, action):
@@ -430,6 +431,91 @@ class CursorGateTests(unittest.TestCase):
         self.assertEqual(self.call(self.event("Shell", command=export_cmd + " --force", **conversation))["permission"], "deny")
         self.assertEqual(subprocess.run(close_cmd, capture_output=True).returncode, 0)
         self.assertEqual(self.call(self.event("Shell", command=shlex.join(["python3", vendor, "--output", "scripts/check_docs.py"]), **conversation))["permission"], "deny")
+
+    def test_cursor_str_replace_notebook_readonly_and_english_chat_flow(self):
+        import shlex
+        cli_plan = str(SCRIPTS / "workflow_planning_cli.py")
+        cli_engine = str(SCRIPTS / "workflow_engine_cli.py")
+        session = "cursor-e2e-" + uuid.uuid4().hex
+        conversation = {"conversation_id": session}
+
+        # 1. Cursor 新增只读调查工具全部放行；StrReplace 与 EditNotebook 缺失路径均拒绝。
+        for ro_tool in ("SemanticSearch", "ListDir", "GlobFileSearch"):
+            self.assertEqual(self.call(self.event(ro_tool, **conversation))["permission"], "allow")
+        self.assertEqual(self.call(self.event("StrReplace", **conversation))["permission"], "deny")
+        self.assertEqual(self.call(self.event("EditNotebook", **conversation))["permission"], "deny")
+
+        # 2. init 规划态支持 StrReplace 编辑已登记文档，关闭后恢复拦截，且 .speclock/ 永远受保护。
+        open_cmd = ["python3", cli_plan, "open", "--root", str(self.root), "--session", session, "--operation", "init", "--path", "docs/product/项目首页.md"]
+        self.assertEqual(subprocess.run(open_cmd, capture_output=True).returncode, 0)
+        self.assertEqual(self.call(self.event("StrReplace", path="docs/product/项目首页.md", **conversation))["permission"], "allow")
+        self.assertEqual(self.call(self.event("StrReplace", path=".speclock/state.sqlite", **conversation))["permission"], "deny")
+        close_cmd = ["python3", cli_plan, "close", "--root", str(self.root), "--session", session]
+        self.assertEqual(subprocess.run(close_cmd, capture_output=True).returncode, 0)
+        self.assertEqual(self.call(self.event("StrReplace", path="docs/product/项目首页.md", **conversation))["permission"], "deny")
+
+        # 3. sessionStart 注入 CURSOR_CONVERSATION_ID，check-hooks 在 beforeSubmitPrompt 前后准确切换状态。
+        subprocess.run(["git", "init", "-q", str(self.root)], check=True)
+        (self.root / "rules.md").write_text("Standards", encoding="utf-8")
+        (self.root / "ai-workflow.yaml").write_text(
+            f"version: 1\nbaseline:\n  required:\n    - rules.md\nverify:\n  light: {sys.executable} -c pass\n  full: git status --short\n",
+            encoding="utf-8",
+        )
+        start = self.call(dict(self.event(**conversation), hook_event_name="sessionStart"))
+        self.assertEqual(start["env"], {"WORKFLOW_HOST": "cursor", "CURSOR_CONVERSATION_ID": session})
+        clean_env = {
+            k: v for k, v in os.environ.items()
+            if k not in {"WORKFLOW_HOST", "CODEX_THREAD_ID", "CLAUDE_SESSION_ID", "CURSOR_PROJECT_DIR", "CURSOR_PLUGIN_ROOT", "CURSOR_CONVERSATION_ID", "CURSOR_AGENT", "CURSOR_TRACE_ID", "CLAUDE_PLUGIN_ROOT", "CLAUDECODE"}
+        }
+        clean_env["WORKFLOW_ENGINE_HOME"] = str(Path(self.tmp.name) / "engine")
+        cursor_env = {**clean_env, **start["env"]}
+
+        pre_hooks = json.loads(subprocess.run([sys.executable, cli_engine, "--root", str(self.root), "check-hooks"], text=True, capture_output=True, env=cursor_env).stdout)
+        self.assertFalse(pre_hooks["hooks"]["hook_active"])
+        self.assertEqual(pre_hooks["hooks"]["session_id"], session)
+
+        self.assertEqual(self.call(dict(self.event(**conversation), hook_event_name="beforeSubmitPrompt", prompt="Start")), {"continue": True})
+        post_hooks = json.loads(subprocess.run([sys.executable, cli_engine, "--root", str(self.root), "check-hooks"], text=True, capture_output=True, env=cursor_env).stdout)
+        self.assertTrue(post_hooks["hooks"]["hook_active"])
+        self.assertEqual(post_hooks["hooks"]["hook_host"], "cursor")
+
+        # 4. 英文聊天定档与方案批准（prepare --tier light -> Select Full Tier -> request-confirmation --kind approval -> Approve Proposal）。
+        details = {"goal": "Add feature", "scope": ["src"], "source": "PRD", "dependencies": [], "steps": [{"id": "s1", "title": "Implement"}]}
+        prep = json.loads(subprocess.run(
+            [sys.executable, cli_engine, "--root", str(self.root), "prepare", "--task", "T-CUR-EN", "--tier", "light", "--acceptance", "A1", "--details-json", json.dumps(details), "--executor", "cursor", "--session", session, "--request-tier"],
+            text=True, capture_output=True, env=cursor_env,
+        ).stdout)
+        self.assertTrue(prep["ok"], prep)
+        self.assertEqual(prep["confirmation"]["replies_en"], ["Select Light Tier", "Select Standard Tier", "Select Full Tier"])
+
+        self.assertEqual(self.call(dict(self.event(**conversation), hook_event_name="beforeSubmitPrompt", prompt="Select Full Tier")), {"continue": True})
+        selected = json.loads(subprocess.run([sys.executable, cli_engine, "--root", str(self.root), "status", "--task", "T-CUR-EN"], text=True, capture_output=True, env=cursor_env).stdout)["task"]
+        self.assertEqual(selected["tier"], "full")
+
+        proposal = {k: "Detail" for k in ("goal", "design", "scope", "impact", "risk", "rollback", "acceptance")}
+        full_plan = {"version": 1, "checks": [{"id": "check-1", "argv": ["git", "status", "--short"], "cwd": ".", "timeout": 10, "covers": ["format", "analyze", "test"], "acceptance": ["A1"]}]}
+        updated = json.loads(subprocess.run(
+            [sys.executable, cli_engine, "--root", str(self.root), "update-task", "--task", "T-CUR-EN", "--version", str(selected["version"]), "--file-json", json.dumps({"proposal": proposal, "plan": full_plan})],
+            text=True, capture_output=True, env=cursor_env,
+        ).stdout)["task"]
+
+        app_req = json.loads(subprocess.run(
+            [sys.executable, cli_engine, "--root", str(self.root), "request-confirmation", "--task", "T-CUR-EN", "--version", str(updated["version"]), "--session", session, "--kind", "approval"],
+            text=True, capture_output=True, env=cursor_env,
+        ).stdout)
+        self.assertTrue(app_req["ok"], app_req)
+        self.assertEqual(app_req["confirmation"]["replies_en"], ["Approve Proposal"])
+        self.assertIn("Detail", app_req["confirmation"]["review_markdown"])
+
+        self.assertEqual(self.call(dict(self.event(**conversation), hook_event_name="beforeSubmitPrompt", prompt="Approve Proposal")), {"continue": True})
+        approved = json.loads(subprocess.run([sys.executable, cli_engine, "--root", str(self.root), "status", "--task", "T-CUR-EN"], text=True, capture_output=True, env=cursor_env).stdout)["task"]
+        self.assertNotIn("approval", approved["missing"])
+
+        # 进入实施后 StrReplace 与 EditNotebook 均按 scope 放行/拒绝。
+        subprocess.run([sys.executable, cli_engine, "--root", str(self.root), "begin", "--task", "T-CUR-EN", "--executor", "cursor", "--session", session], check=True, capture_output=True, env=cursor_env)
+        self.assertEqual(self.call(self.event("StrReplace", path="src/app.py", **conversation))["permission"], "allow")
+        self.assertEqual(self.call(self.event("EditNotebook", target_notebook="src/nb.ipynb", **conversation))["permission"], "allow")
+        self.assertEqual(self.call(self.event("EditNotebook", target_notebook="outside.ipynb", **conversation))["permission"], "deny")
 
 
 if __name__ == "__main__":
