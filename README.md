@@ -6,7 +6,7 @@
 
 SpecLock is an AI development workflow plugin for **Codex, Claude Code, and Cursor**. It ties task cards, human approvals, implementation steps, and verification results together. Scope the process to the risk, require current evidence to move forward, and leave final acceptance to a person.
 
-[Quick start](#quick-start-run-auth-r03) · [Workflow at a glance](#workflow-at-a-glance) · [OpenSpec and Superpowers](#how-it-compares-to-openspec-and-superpowers)
+[Quick start](#quick-start-run-auth-r03) · [Workflow at a glance](#workflow-at-a-glance) · [What you get](#what-you-get-at-the-end-of-a-task) · [OpenSpec and Superpowers](#how-it-compares-to-openspec-and-superpowers)
 
 ## Quick start: run `AUTH-R03`
 
@@ -49,6 +49,16 @@ Try adding token expiry and revocation in an example project, without touching y
 | **6. Hand off for human acceptance** | When review passes, a linked task card is updated to “review passed, awaiting human acceptance.” The agent hands over the evidence and coverage gaps without checking off the card. |
 
 **Open the Dashboard at any time.** Send `$workflow-core:dashboard on` separately in Codex, then open the local URL it returns. The read-only dashboard shows the tier, implementation todos, failures or open decisions, verification results, and review evidence. Confirmations and approvals still happen in the agent's chat.
+
+## What you get at the end of a task
+
+SpecLock does not leave you with just "done." You get a record you can check against the current code:
+
+- **Verifiable evidence.** Who approved which version of the proposal, which standards were read, which checks actually ran and their exit codes, and how required review findings were closed are all stored per task round. Changes to relevant code or configuration invalidate the evidence automatically. Use the dashboard day to day; for details, ask the agent for `status` / `history`, or export a Markdown review with `render-md`.
+- **A clear split between people and agents.** Only a person can confirm the tier, approve a proposal, or send a task back. The agent stops at "review passed, awaiting human acceptance"; you check off the card.
+- **Handoffs that survive a new session.** A new session or agent resumes from the engine state, not from chat memory: approved proposals stay valid, but it must reread the standards and earn fresh verification results.
+
+Evidence is stored locally in `.speclock/` and is not committed. For team review, rerun the same `verify` checks on the PR in CI. See [Verifiable evidence and handoffs](docs/evidence-and-handoff.md) (Chinese).
 
 ## How it compares to OpenSpec and Superpowers
 
