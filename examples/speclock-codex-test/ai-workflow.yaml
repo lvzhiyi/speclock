@@ -7,7 +7,7 @@ docs:
   cards_dir: docs/product/tasks
   dev_docs: docs/development
 review:
-  base_branch: develop
+  base_branch: main
 verify:
   docs: python3 scripts/check_docs.py --check-config
   light: python3 -m unittest discover -s src
