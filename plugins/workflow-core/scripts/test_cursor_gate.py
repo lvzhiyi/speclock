@@ -403,6 +403,34 @@ class CursorGateTests(unittest.TestCase):
         self.call(dict(self.event(conversation_id="conv-1"), hook_event_name="beforeSubmitPrompt", prompt="「批准方案」"))
         self.assertNotIn("approval", engine.status("T1")["missing"])
 
+    def test_vendor_check_docs_allowed_only_in_init_planning(self):
+        import shlex
+        cli = str(SCRIPTS / "workflow_planning_cli.py")
+        vendor = str(SCRIPTS / "vendor_check_docs.py")
+        session = "cursor-vendor-" + uuid.uuid4().hex
+        conversation = {"conversation_id": session}
+
+        self.assertEqual(
+            self.call(self.event("Shell", command=f"WORKFLOW_HOST=cursor python3 {vendor} --check scripts/check_docs.py", **conversation))["permission"],
+            "allow",
+        )
+        export_cmd = f"WORKFLOW_HOST=cursor python3 {vendor} --output scripts/check_docs.py"
+        self.assertEqual(self.call(self.event("Shell", command=export_cmd, **conversation))["permission"], "deny")
+
+        prd_open = ["python3", cli, "open", "--root", str(self.root), "--session", session, "--operation", "prd-breakdown", "--path", "docs/product/任务/账户.md"]
+        self.assertEqual(subprocess.run(prd_open, capture_output=True).returncode, 0)
+        self.assertEqual(self.call(self.event("Shell", command=export_cmd, **conversation))["permission"], "deny")
+        close_cmd = ["python3", cli, "close", "--root", str(self.root), "--session", session]
+        self.assertEqual(subprocess.run(close_cmd, capture_output=True).returncode, 0)
+
+        init_open = ["python3", cli, "open", "--root", str(self.root), "--session", session, "--operation", "init", "--path", "ai-workflow.yaml"]
+        self.assertEqual(subprocess.run(init_open, capture_output=True).returncode, 0)
+        self.assertEqual(self.call(self.event("Shell", command=export_cmd, **conversation))["permission"], "allow")
+        self.assertEqual(self.call(self.event("Shell", command=export_cmd, conversation_id="other"))["permission"], "deny")
+        self.assertEqual(self.call(self.event("Shell", command=export_cmd + " --force", **conversation))["permission"], "deny")
+        self.assertEqual(subprocess.run(close_cmd, capture_output=True).returncode, 0)
+        self.assertEqual(self.call(self.event("Shell", command=shlex.join(["python3", vendor, "--output", "scripts/check_docs.py"]), **conversation))["permission"], "deny")
+
 
 if __name__ == "__main__":
     unittest.main()

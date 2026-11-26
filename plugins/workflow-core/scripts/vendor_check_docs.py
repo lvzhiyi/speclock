@@ -17,6 +17,17 @@ SCRIPTS_DIR = Path(__file__).resolve().parent
 PLUGIN_JSON = SCRIPTS_DIR.parent / '.claude-plugin/plugin.json'
 CONFIG_SRC = SCRIPTS_DIR / 'workflow_config.py'
 DOCS_SRC = SCRIPTS_DIR / 'check_docs.py'
+VENDOR_MARKER = '来源：workflow-core '
+
+
+def is_vendored_file(path):
+    """检查已有文件是否为 workflow-core 导出的脚本副本。"""
+    try:
+        with path.open('r', encoding='utf-8', errors='replace') as handle:
+            head = handle.read(4096)
+    except OSError:
+        return False
+    return VENDOR_MARKER in head
 
 
 def _strip_header(source):
@@ -79,6 +90,7 @@ def main(argv=None):
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument('--output', help='输出路径；传 - 输出到标准输出')
     group.add_argument('--check', help='校验已有文件是否与当前插件版本一致')
+    parser.add_argument('--force', action='store_true', help='强制覆盖已存在的非插件生成文件（仅人工手动调用）')
     args = parser.parse_args(argv)
 
     rendered = render_standalone()
@@ -98,6 +110,15 @@ def main(argv=None):
         return 0
 
     target = Path(args.output)
+    if target.is_symlink() or (target.exists() and not target.is_file()):
+        print(f'[vendor] 目标为符号链接或非常规文件，拒绝写入：{target}', file=sys.stderr)
+        return 1
+    if target.is_file() and not args.force and not is_vendored_file(target):
+        print(
+            f'[vendor] 目标已存在且不是 workflow-core 导出的脚本，拒绝覆盖：{target}（如需覆盖请人工确认后加 --force）',
+            file=sys.stderr,
+        )
+        return 1
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(rendered, encoding='utf-8')
     try:

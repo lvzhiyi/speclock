@@ -66,6 +66,48 @@ class VendorCheckDocsTests(unittest.TestCase):
             self.assertEqual(run_fail.returncode, 1, run_fail.stdout + run_fail.stderr)
             self.assertIn('完成勾选框已勾选，但协作状态仍为非终态', run_fail.stderr)
 
+    def test_refuses_to_overwrite_non_vendored_script_unless_forced(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project = Path(tmp) / 'consumer'
+            out_script = project / 'scripts/check_docs.py'
+            out_script.parent.mkdir(parents=True)
+            custom_body = '# custom script\nprint("keep")\n'
+            out_script.write_text(custom_body, encoding='utf-8')
+
+            refused = subprocess.run(
+                [sys.executable, str(VENDOR), '--output', str(out_script)],
+                capture_output=True, text=True, check=False,
+            )
+            self.assertEqual(refused.returncode, 1, refused.stdout + refused.stderr)
+            self.assertIn('拒绝覆盖', refused.stderr)
+            self.assertEqual(out_script.read_text(encoding='utf-8'), custom_body)
+
+            forced = subprocess.run(
+                [sys.executable, str(VENDOR), '--output', str(out_script), '--force'],
+                capture_output=True, text=True, check=False,
+            )
+            self.assertEqual(forced.returncode, 0, forced.stdout + forced.stderr)
+            checked = subprocess.run(
+                [sys.executable, str(VENDOR), '--check', str(out_script)],
+                capture_output=True, text=True, check=False,
+            )
+            self.assertEqual(checked.returncode, 0, checked.stdout + checked.stderr)
+
+            refreshed = subprocess.run(
+                [sys.executable, str(VENDOR), '--output', str(out_script)],
+                capture_output=True, text=True, check=False,
+            )
+            self.assertEqual(refreshed.returncode, 0, refreshed.stdout + refreshed.stderr)
+
+            symlink_target = project / 'scripts/link_check_docs.py'
+            symlink_target.symlink_to(out_script)
+            symlink_res = subprocess.run(
+                [sys.executable, str(VENDOR), '--output', str(symlink_target)],
+                capture_output=True, text=True, check=False,
+            )
+            self.assertEqual(symlink_res.returncode, 1, symlink_res.stdout + symlink_res.stderr)
+            self.assertIn('符号链接', symlink_res.stderr)
+
 
 if __name__ == '__main__':
     unittest.main()

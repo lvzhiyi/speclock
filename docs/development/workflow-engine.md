@@ -14,7 +14,7 @@ CLI `create --details` 必填且必须为 JSON 对象（包括拒绝 null）；C
 
 状态和开闭 JSONL 审计保存在状态目录（默认项目内 `.speclock/`），以项目、真实宿主 session、操作、精确路径及有效期约束。原生 Write / Edit / apply_patch 的全部目标命中才放行；路径穿越、符号链接、伪扩展、Shell 文件写入、MCP 混写及模板/产品代码不在例外内。结束、取消和交接前 close，过期或关闭后恢复原实施门槛。旧 WORKFLOW_PLAN_PATHS 环境例外不再生效。技能调用不是可靠身份认证，宿主也不能自动观察 Skill 后声称用户已批准实施。
 
-看板固定脚本只接受明确 on / off / status 与不重复的 --root / --task 键值，不需要实施任务；三宿主固定 WORKFLOW_HOST 前缀均支持。动作可放在白名单键值之前或之后，标量选项重复仍拒绝。无 action、serve、其他参数、任意脚本和 shell 拼接不属于免任务命令。init 的固定 detect.sh、git check-ignore -v 与固定 check_docs.py --root PROJECT --check-config 独立只读放行，不要求实施任务。macOS 只规范化 /var、/tmp、/etc 的已知 /private 系统祖先别名，项目内部符号链接仍逐级拒绝；配置与草稿均不可将插件 scripts/skills/templates 源码映射成规划文档。只读调查保持原有独立放行逻辑。
+看板固定脚本只接受明确 on / off / status 与不重复的 --root / --task 键值，不需要实施任务；三宿主固定 WORKFLOW_HOST 前缀均支持。动作可放在白名单键值之前或之后，标量选项重复仍拒绝。无 action、serve、其他参数、任意脚本和 shell 拼接不属于免任务命令。init 的固定 detect.sh、git check-ignore -v 与固定 check_docs.py --root PROJECT --check-config 独立只读放行，不要求实施任务。固定 `vendor_check_docs.py --check <项目内路径>` 独立只读放行；`--output scripts/check_docs.py` 仅在当前会话持有活跃 `init` 规划登记时放行，拒绝 `--force`、符号链接、路径穿越与插件源码目录，且脚本默认拒绝覆盖非插件生成的同名文件。macOS 只规范化 /var、/tmp、/etc 的已知 /private 系统祖先别名，项目内部符号链接仍逐级拒绝；配置与草稿均不可将插件 scripts/skills/templates 源码映射成规划文档。只读调查保持原有独立放行逻辑。
 
 ## 小接口
 

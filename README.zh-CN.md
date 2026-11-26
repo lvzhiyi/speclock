@@ -1,6 +1,6 @@
 # SpecLock
 
-[English](README.md) | **简体中文** · [演示视频](https://github.com/user-attachments/assets/6c399680-073c-4bd3-8bb2-d61fae7f9972) · [v0.28.7](docs/development/release-0.28.7.md)
+[English](README.md) | **简体中文** · [演示视频](https://github.com/user-attachments/assets/6c399680-073c-4bd3-8bb2-d61fae7f9972) · [v0.28.8](docs/development/release-0.28.8.md)
 
 **AI 说「测试过了」还不够。SpecLock 要看到验证结果，才允许评审。**
 
@@ -114,4 +114,4 @@ claude plugin install workflow-core@speclock
 
 - **流程与恢复：**[工作流技能](plugins/workflow-core/skills/workflow/SKILL.md#任务路径) · [验证失败怎么处理](plugins/workflow-core/skills/verify/SKILL.md#失败处理顺序) · [引擎协议与 CLI](docs/development/workflow-engine.md#cli-示例)
 - **项目工具：**[看板](plugins/workflow-core/skills/dashboard/SKILL.md) · [流程度量](plugins/workflow-core/skills/metrics/SKILL.md) · [独立文档检查脚本](plugins/workflow-core/scripts/vendor_check_docs.py)
-- **参与项目：**[Issues](https://github.com/lvzhiyi/speclock/issues) · [版本说明](docs/development/release-0.28.7.md) · [MIT 许可证](LICENSE)
+- **参与项目：**[Issues](https://github.com/lvzhiyi/speclock/issues) · [版本说明](docs/development/release-0.28.8.md) · [MIT 许可证](LICENSE)

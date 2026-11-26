@@ -21,7 +21,7 @@ WORKFLOW_HOST=HOST python3 "${CLAUDE_PLUGIN_ROOT}/scripts/workflow_planning_cli.
 WORKFLOW_HOST=HOST python3 "${CLAUDE_PLUGIN_ROOT}/scripts/workflow_planning_cli.py" close --root "项目绝对根" --session "${SESSION}"
 ```
 
-`HOST` 取 `cursor` / `codex` / `claude`，重复 `--path` 列出每个目标（允许 `ai-workflow.yaml`、显式入口 `AGENTS.md` / `CLAUDE.md` / `README.md` 及有限骨架：`home / requirements / overview / glossary / design_index` 和 `dev_docs` 下 `standards / coding / architecture / testing / ui / api-integration`）。自定义目录时在确认草稿后通过 `--config-json '{"version":"1","docs":{"product_root":"实际目录"}}'` 内联传入；`.claude/settings.json`、脚本和业务代码不属于规划授权。
+`HOST` 取 `cursor` / `codex` / `claude`，重复 `--path` 列出每个目标（允许 `ai-workflow.yaml`、显式入口 `AGENTS.md` / `CLAUDE.md` / `README.md` 及有限骨架：`home / requirements / overview / glossary / design_index` 和 `dev_docs` 下 `standards / coding / architecture / testing / ui / api-integration`）。自定义目录时在确认草稿后通过 `--config-json '{"version":"1","docs":{"product_root":"实际目录"}}'` 内联传入；`.claude/settings.json`、普通脚本和业务代码不属于规划授权，但 `scripts/check_docs.py` 可在活跃 `init` 规划态下通过固定命令 `vendor_check_docs.py --output scripts/check_docs.py` 导出或刷新（不会覆盖非插件生成的同名脚本）。
 
 ## 1. 探测（只读）
 
@@ -50,9 +50,9 @@ bash "${CLAUDE_PLUGIN_ROOT}/skills/init/detect.sh" .
 
 - 命令只写项目里**真实存在**的脚本或 CI 中实际执行的命令，不编造。
 - 项目没有任何代码检查入口时，轻量/标准档验证命令写技术栈插件的默认检查（Flutter 为 `stack-flutter` 的 `flutter_check.py`），并注明来自插件。
-- 文档验证命令推荐**仓库自包含**：在用户确认后运行下述命令，将零第三方依赖的单文件版 `check_docs.py` 导出到项目 `scripts/check_docs.py` 并提交进 Git，`verify.docs` 写 `python3 scripts/check_docs.py --root .`；避免在消费仓库建本机插件软链接或探测 `~/.claude/plugins/cache/`。未导出前可用插件内置脚本验证：
+- 文档验证命令推荐**仓库自包含（默认推荐，确认后导出）**：在用户确认导出后，于活跃 `init` 规划态内运行下述固定命令（必要时前置 `WORKFLOW_HOST=HOST`），将零第三方依赖的单文件版 `check_docs.py` 导出到项目 `scripts/check_docs.py` 并提交进 Git，`verify.docs` 写 `python3 scripts/check_docs.py --root .`；避免在消费仓库建本机插件软链接或探测 `~/.claude/plugins/cache/`。若用户不希望在非 Python 仓库中落盘 Python 脚本，可选择跳过导出（`verify.docs` 不写或使用插件内置脚本）。脚本默认拒绝覆盖非 `workflow-core` 导出的同名文件。未导出前可用插件内置脚本验证：
   ```bash
-  python3 "${CLAUDE_PLUGIN_ROOT}/scripts/vendor_check_docs.py" --output scripts/check_docs.py
+  WORKFLOW_HOST=HOST python3 "${CLAUDE_PLUGIN_ROOT}/scripts/vendor_check_docs.py" --output scripts/check_docs.py
   ```
 - 有多个设计链接时，以文档中明确写着“权威 / 当前 / 确认”的那个为准；判断不了就作为待问项，不按出现次数或顺序猜。
 - 每个值都要能说出依据（文件 + 位置），依据只在第 3 步的展示表里给出，不写进最终配置。
@@ -62,6 +62,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/skills/init/detect.sh" .
 把仍然未知或有歧义的项集中一次提问（有提问工具就用选项形式，每项给推荐值），常见待问项：
 
 - 默认验证平台（例如只有 `android/ ios/ web/` 目录，没有写明默认验证哪个）
+- 尚未存在 `scripts/check_docs.py` 时，是否导出自包含的 `scripts/check_docs.py`（默认推荐导出；如不希望在仓库内放置 Python 检查脚本可跳过）
 - 同一文件里有多个候选的权威设计文件
 - 非完整档的交接目录有多个项目约定时，确认 `handoff.default`；没有项目约定时用模板默认值。
 - 标准档、完整档分别跑哪条命令（只找到一条检查命令时可以都用它）
@@ -77,7 +78,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/skills/init/detect.sh" .
    - 两者都没有：新建 `AGENTS.md`，并询问是否同时新建只含 `@AGENTS.md` 的 `CLAUDE.md`。
    - 写入前用 `git check-ignore -v <文件>` 检查 `ai-workflow.yaml`、入口文件和 `docs/` 是否被忽略；被忽略时团队拿不到配置，先告诉用户命中的规则，由用户决定改 `.gitignore` 还是换位置，不擅自修改。
 4. 写完运行 `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_docs.py" --root . --check-config`：解析错误（退出码 2）或路径不存在必须修正后再交付。
-5. **更新模式**（已有 `ai-workflow.yaml`）：逐项对比，只展示有变化的键；保留用户手写的 `notes` 和注释，不整份覆盖。旧 `spec`、`handoff.with_change` 与 `verify.full` 中的 `openspec validate` 列入 OpenSpec 退场清理清单；历史 `openspec/changes/` 可通过 `workflow-core:archive`（`--changes-dir openspec/changes`）批量归档，`openspec/specs/` 作为普通项目文档保留。
+5. **更新模式**（已有 `ai-workflow.yaml`）：逐项对比，只展示有变化的键；保留用户手写的 `notes` 和注释，不整份覆盖。若项目已有插件导出的 `scripts/check_docs.py`，可用 `vendor_check_docs.py --check scripts/check_docs.py` 检查是否过期，并在用户确认后于 `init` 规划态下用 `--output scripts/check_docs.py` 刷新。旧 `spec`、`handoff.with_change` 与 `verify.full` 中的 `openspec validate` 列入 OpenSpec 退场清理清单；历史 `openspec/changes/` 可通过 `workflow-core:archive`（`--changes-dir openspec/changes`）批量归档，`openspec/specs/` 作为普通项目文档保留。
 
 ## 4. 文档骨架（只补缺失的）
 

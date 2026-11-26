@@ -292,6 +292,45 @@ def init_read_command(command, event):
     return len(remaining) == 2 and remaining[0] == "--root" and same_root(remaining[1])
 
 
+def vendor_check_docs_command(command, event):
+    """允许在 init 规划态安全导出自包含 scripts/check_docs.py，或只读校验已有副本。"""
+    args = fixed_command(command, "vendor_check_docs.py")
+    if args is None:
+        return False
+    if args in (["--help"], ["-h"]):
+        return True
+    if len(args) != 2 or args[0] not in {"--check", "--output"} or not args[1] or args[1].startswith("-"):
+        return False
+    root = project_root(event.get("cwd"))
+    if root is None:
+        return False
+    raw_target = args[1]
+    target_path = Path(raw_target)
+    if not target_path.is_absolute():
+        if ".." in target_path.parts or "." in raw_target.split("/"):
+            return False
+        candidate = str(Path(event.get("cwd") or root) / target_path)
+    else:
+        candidate = raw_target
+    try:
+        from workflow_planning_cli import read_record, safe_path
+        from workflow_engine.state_dir import is_state_relpath
+        rel = safe_path(root, candidate)
+    except (ValueError, TypeError):
+        return False
+    if is_state_relpath(rel):
+        return False
+    if args[0] == "--check":
+        return True
+    if rel != "scripts/check_docs.py":
+        return False
+    plugin_root = Path(__file__).resolve().parent.parent
+    if (root / rel).resolve().is_relative_to(plugin_root):
+        return False
+    record = read_record(root, event.get("session_id"))
+    return bool(record and record.get("operation") == "init")
+
+
 def pending_path(root, session, channel=""):
     from workflow_engine_cli import default_db
     name = hashlib.sha256((channel + str(session)).encode()).hexdigest()
@@ -1067,7 +1106,7 @@ def pre_tool(event):
     if tool in READ_TOOLS or tool in set(filter(None, os.environ.get("WORKFLOW_READONLY_MCP_TOOLS", "").split(","))):
         return None
     data = event.get("tool_input") or {}
-    if tool in SHELL_TOOLS and (readonly_shell(shell_command(data)) or engine_command(shell_command(data)) or dashboard_command(shell_command(data)) or archive_command(shell_command(data), event) or planning_command(shell_command(data), event) or init_read_command(shell_command(data), event)):
+    if tool in SHELL_TOOLS and (readonly_shell(shell_command(data)) or engine_command(shell_command(data)) or dashboard_command(shell_command(data)) or archive_command(shell_command(data), event) or planning_command(shell_command(data), event) or init_read_command(shell_command(data), event) or vendor_check_docs_command(shell_command(data), event)):
         return None
     try:
         paths = targets(event, root)

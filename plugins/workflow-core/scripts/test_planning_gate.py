@@ -208,3 +208,80 @@ class PlanningGateTests(unittest.TestCase):
         self.assertIsNone(host_gate.pre_tool(self.event("Write", file_path="docs/development/standards.md")))
         self.assertIsNotNone(host_gate.pre_tool(self.event("Write", file_path="docs/development/random.md")))
         self.run_cli("close")
+
+    def test_vendor_check_docs_narrow_gate(self):
+        vendor = Path(host_gate.__file__).with_name("vendor_check_docs.py")
+        sub = self.root / "sub"
+        sub.mkdir()
+
+        for suffix in ("--help", "-h", "--check scripts/check_docs.py"):
+            for prefix in ("", "WORKFLOW_HOST=claude ", "WORKFLOW_HOST=codex ", "WORKFLOW_HOST=cursor "):
+                cmd = f"{prefix}python3 {vendor} {suffix}"
+                self.assertIsNone(host_gate.pre_tool(self.event("Shell", command=cmd)), cmd)
+        self.assertIsNotNone(host_gate.pre_tool(self.event("Shell", command=f"python3 {vendor} --output scripts/check_docs.py")))
+
+        self.grant()
+        self.assertIsNotNone(host_gate.pre_tool(self.event("Shell", command=f"python3 {vendor} --output scripts/check_docs.py")))
+        self.run_cli("close")
+
+        self.run_cli("open", "--operation", "init", "--path", "ai-workflow.yaml")
+        abs_target = self.root / "scripts/check_docs.py"
+        for prefix in ("", "WORKFLOW_HOST=claude ", "WORKFLOW_HOST=codex ", "WORKFLOW_HOST=cursor "):
+            for target in ("scripts/check_docs.py", str(abs_target)):
+                cmd = f"{prefix}python3 {vendor} --output {target}"
+                self.assertIsNone(host_gate.pre_tool(self.event("Shell", command=cmd)), cmd)
+        self.assertIsNone(host_gate.pre_tool({
+            "cwd": str(sub), "session_id": "s1", "tool_name": "Shell",
+            "tool_input": {"command": f"python3 {vendor} --output {abs_target}"},
+        }))
+        self.assertIsNotNone(host_gate.pre_tool({
+            "cwd": str(sub), "session_id": "s1", "tool_name": "Shell",
+            "tool_input": {"command": f"python3 {vendor} --output scripts/check_docs.py"},
+        }))
+
+        exported = subprocess.run(
+            ["python3", str(vendor), "--output", "scripts/check_docs.py"],
+            cwd=self.root, capture_output=True, text=True, check=False,
+        )
+        self.assertEqual(exported.returncode, 0, exported.stdout + exported.stderr)
+        self.assertTrue(abs_target.is_file())
+        checked = subprocess.run(
+            ["python3", str(vendor), "--check", "scripts/check_docs.py"],
+            cwd=self.root, capture_output=True, text=True, check=False,
+        )
+        self.assertEqual(checked.returncode, 0, checked.stdout + checked.stderr)
+
+        self.assertIsNotNone(host_gate.pre_tool(dict(
+            self.event("Shell", command=f"python3 {vendor} --output scripts/check_docs.py"),
+            session_id="s2",
+        )))
+        for bad_cmd in (
+            f"python3 {vendor} --output scripts/other.py",
+            f"python3 {vendor} --output scripts/check_docs.py --force",
+            f"python3 {vendor} --output -",
+            f"python3 {vendor} --output ../x.py",
+            f"python3 {vendor} --output scripts/check_docs.py && touch x",
+            "python3 /tmp/vendor_check_docs.py --output scripts/check_docs.py",
+            f"python3 {vendor} --output .speclock/check_docs.py",
+        ):
+            self.assertIsNotNone(host_gate.pre_tool(self.event("Shell", command=bad_cmd)), bad_cmd)
+
+        outside = Path(self.tmp.name) / "outside_scripts"
+        outside.mkdir()
+        abs_target.unlink()
+        (self.root / "scripts").rmdir()
+        (self.root / "scripts").symlink_to(outside, target_is_directory=True)
+        self.assertIsNotNone(host_gate.pre_tool(self.event("Shell", command=f"python3 {vendor} --output scripts/check_docs.py")))
+        self.assertIsNotNone(host_gate.pre_tool(self.event("Shell", command=f"python3 {vendor} --check scripts/check_docs.py")))
+
+        self.run_cli("close")
+        (self.root / "scripts").unlink()
+        self.assertIsNotNone(host_gate.pre_tool(self.event("Shell", command=f"python3 {vendor} --output scripts/check_docs.py")))
+
+        plugin_root = Path(host_gate.__file__).resolve().parent.parent
+        with patch.object(host_gate, "project_root", return_value=plugin_root), \
+                patch("workflow_planning_cli.read_record", return_value={"operation": "init"}):
+            self.assertFalse(host_gate.vendor_check_docs_command(
+                f"python3 {vendor} --output scripts/check_docs.py",
+                {"cwd": str(plugin_root), "session_id": "s1"},
+            ))
