@@ -1,25 +1,25 @@
-<!-- 说明：精简三合一工程规范模板，适用于希望用单一必读基线替代分散多份规范的项目（≤200 行）。生成后删除此注释。 -->
-# 工程规范（核心基线）
+<!-- Note: lean 3-in-1 engineering baseline template for small/medium projects (<=200 lines) wanting a single required baseline doc. Remove this comment after generating. -->
+# Engineering Standards (Core Baseline)
 
-> 本文维护长期有效的代码、架构与验证底线；不写具体页面/路由清单、单次任务记录或排查流水。
+> Maintain durable coding, architecture, and verification baselines here; do not put page/route lists, single-task logs, or debugging transcripts here.
 
-## 1. 架构与分层边界
+## 1. Architecture & Layer Boundaries
 
-- 目录职责：{{按项目顶层目录填写分层职责与依赖方向；待确认}}
-- 禁止跨层越权调用；共享能力放共享层，不复制实现。
-- 敏感信息（凭据、令牌、生产密钥）不入库、不进日志、不写死在客户端。
+- Directory Responsibilities: {{fill in layer responsibilities and dependency directions from top-level directories; TBD}}
+- Do not cross layer boundaries; put shared capabilities in shared layers instead of duplicating logic.
+- Never store secrets (credentials, tokens, production keys) in the repo, logs, or hardcoded client code.
 
-## 2. 代码与生成产物
+## 2. Code Style & Generated Artifacts
 
-- 格式化与静态分析：{{如 dart format / ruff / eslint 及配置文件路径}}
-- 命名与注释：{{项目命名与关键注释约定；无特殊要求写“遵循语言官方习惯”}}
-- 生成代码：{{生成命令与目标目录；禁止手改生成文件}}
+- Formatting & Static Analysis: {{e.g. dart format / ruff / eslint and config file path}}
+- Naming & Comments: {{project naming and doc-comment conventions; "follow language idioms" if none}}
+- Generated Code: {{generation command and output directory; never hand-edit generated files}}
 
-## 3. 验证命令与平台口径
+## 3. Verification Commands & Platforms
 
-- 文档检查：`{{python3 scripts/check_docs.py --root .}}`
-- 轻量检查：`{{定向测试 + 静态分析命令}}`
-- 标准检查：`{{完整测试 + 静态分析命令}}`
-- 完整检查：`{{标准检查 + 默认平台构建命令}}`
-- 默认验证平台：{{如 android / linux / web}}；其余平台仅在明确要求时执行。
-- 只有真实执行且退出码为 0 的检查才能写通过；Mock/单测不代替真实联调或真机端到端。
+- Docs Check: `{{python3 scripts/check_docs.py --root .}}`
+- Light Check: `{{targeted tests + static analysis command}}`
+- Standard Check: `{{full test suite + static analysis command}}`
+- Full Check: `{{standard check + default platform build command}}`
+- Default Verification Platform: {{e.g. android / linux / web}}; other platforms run only when explicitly requested.
+- Only commands that actually ran and exited 0 count as passed; mocks/unit tests do not replace real integration or device E2E runs.

@@ -1,67 +1,67 @@
-# SpecLock 工作流项目配置（放在项目根目录，提交进 git）
-# 推荐运行 /workflow-core:init 自动探测并生成；也可以手动复制后按实际填写。
+# SpecLock project workflow configuration (commit to git at repository root)
+# Recommended: run /workflow-core:init to auto-detect and generate; or copy and fill in manually.
 #
-# 格式：YAML 受限子集，由插件自带解析器读取（不依赖 PyYAML）
-#   - “键: 值”映射；值为空时，下一行缩进 2 格写子项
-#   - 字符串列表逐行写 “- 值”，不支持行内 [a, b] 和 {a: b}
-#   - 不支持多行字符串（| >）、锚点（& *）、多文档（---）、制表符缩进
-#   - 未确认的值写“待确认”，不适用写“无”，不要留示例值
-# 只放脚本和技能能直接取用的事实（路径、命令、枚举、名称）；规则和说明写在项目 docs/。
-# 写完运行：python3 <workflow-core>/scripts/check_docs.py --root . --check-config
+# Format: restricted YAML subset parsed directly without PyYAML
+#   - "key: value" mappings; when value is empty, indent child keys 2 spaces on the next line
+#   - String lists use one "- value" per line; inline [a, b] and {a: b} are not supported
+#   - Multiline strings (| >), anchors (& *), multi-document (---), and tabs are not supported
+#   - Use "TBD" for unconfirmed values and "none" for not applicable; do not leave example placeholders
+# Store only facts scripts and skills consume directly (paths, commands, enums, names); put rules in project docs/.
+# Validate after editing: python3 <workflow-core>/scripts/check_docs.py --root . --check-config
 
 version: 1
 
-# 工作流门禁始终启用；不再提供 engine.enabled 开关。
-# 插件门禁约束受支持工具与状态转移，不是防篡改安全沙箱。
+# Workflow gates are always enabled; engine.enabled is no longer supported.
+# Plugin gates guard supported tool paths and state transitions, not a tamper-proof security sandbox.
 baseline:
-  required:                                # 实施前必须完整读取的项目内规范（精简模式可仅写 docs/development/standards.md）
+  required:                                # Required project baselines read before implementation (lean mode: docs/development/standards.md)
     - docs/development/architecture.md
     - docs/development/coding.md
-  # 按任务范围追加时可增加 scoped 字符串列表，格式：路径模式 => 文档相对路径。
-  # 例如 src/**/*.py => docs/development/python.md；不要保留项目不适用的规则。
+  # Optional path-scoped baselines: "<glob> => <relative doc path>".
+  # Example: src/**/*.py => docs/development/python.md; remove rules that do not apply.
 
 docs:
   product_root: docs/product
-  home: docs/product/项目首页.md
-  requirements: docs/product/需求/需求说明.md
-  cards_dir: docs/product/任务
-  overview: docs/product/任务/版本任务总览.md
-  design_index: docs/product/设计/设计索引.md
+  home: docs/product/index.md
+  requirements: docs/product/requirements/prd.md
+  cards_dir: docs/product/tasks
+  overview: docs/product/tasks/overview.md
+  design_index: docs/product/design/index.md
   dev_docs: docs/development
-  glossary: docs/product/术语表.md        # 项目术语表；没有时写“无”
+  glossary: docs/product/glossary.md        # Project glossary; write "none" if unused
 
 handoff:
   default: docs/development/handoffs/{task_id}.md
 
 review:
-  base_branch: main                        # 功能分支实际合入的分支，如 develop 或 main
+  base_branch: main                        # Target branch for feature merges (e.g. main or develop)
 
 verify:
-  docs: <文档检查命令，推荐自包含：python3 scripts/check_docs.py --root .>
-  light: <定向测试 + 静态分析命令>
-  standard: <完整检查命令>
-  full:                                    # 多条命令按顺序执行
-    - <完整检查命令>
-    - <默认平台构建命令>
+  docs: <doc check command, recommended self-contained: python3 scripts/check_docs.py --root .>
+  light: <targeted tests + static analysis command>
+  standard: <full test suite + static analysis command>
+  full:                                    # Commands run sequentially
+    - <full test suite + static analysis command>
+    - <default platform build command>
 
 platforms:
-  default:                                 # 默认验证的平台
+  default:                                 # Platforms verified by default
     - android
-  on_request:                              # 仅用户明确要求时验证
+  on_request:                              # Verified only when explicitly requested
     - ios
-  excluded:                                # 不考虑的平台
+  excluded:                                # Out-of-scope platforms
     - web
 
 design:
-  tool: pixso                              # pixso | figma | 无
-  source_doc: docs/development/ui.md       # 写明权威设计文件的文档
+  tool: figma                              # figma | pixso | none
+  source_doc: docs/development/ui.md       # Document identifying the authoritative design source
 
 api:
-  tool: apifox                             # apifox | 无
-  project: <接口平台项目名>
+  tool: apifox                             # apifox | none
+  project: <API platform project name>
   project_id_file: .apifox/settings.json
 
-# 旧项目的 code_rules_doc 仍可读取并去重；新项目统一使用 baseline，不再重复生成。
+# Legacy code_rules_doc is still readable and deduplicated; new projects use baseline.
 
-notes:                                     # 只写本项目特有、换项目就不成立的简短约定
-  - <约定>
+notes:                                     # Short project-specific conventions only
+  - <convention>

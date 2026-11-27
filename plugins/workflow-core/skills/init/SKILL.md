@@ -50,7 +50,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/skills/init/detect.sh" .
 
 - 命令只写项目里**真实存在**的脚本或 CI 中实际执行的命令，不编造。
 - 项目没有任何代码检查入口时，轻量/标准档验证命令写技术栈插件的默认检查（Flutter 为 `stack-flutter` 的 `flutter_check.py`），并注明来自插件。
-- 文档验证命令推荐**仓库自包含（默认推荐，确认后导出）**：在用户确认导出后，于活跃 `init` 规划态内运行下述固定命令（必要时前置 `WORKFLOW_HOST=HOST`），将零第三方依赖的单文件版 `check_docs.py` 导出到项目 `scripts/check_docs.py` 并提交进 Git，`verify.docs` 写 `python3 scripts/check_docs.py --root .`；避免在消费仓库建本机插件软链接或探测 `~/.claude/plugins/cache/`。若用户不希望在非 Python 仓库中落盘 Python 脚本，可选择跳过导出（`verify.docs` 不写或使用插件内置脚本）。脚本默认拒绝覆盖非 `workflow-core` 导出的同名文件。未导出前可用插件内置脚本验证：
+- 文档验证命令推荐**仓库自包含（默认推荐，确认后导出）**：在用户确认导出后，于活跃 `init` 规划态内运行下述固定命令（必要时前置 `WORKFLOW_HOST=HOST`），将零第三方依赖的英文单文件版 `check_docs.py`（同时校验中英文文档）导出到项目 `scripts/check_docs.py` 并提交进 Git，`verify.docs` 写 `python3 scripts/check_docs.py --root .`；避免在消费仓库建本机插件软链接或探测 `~/.claude/plugins/cache/`。若用户不希望在非 Python 仓库中落盘 Python 脚本，可选择跳过导出（`verify.docs` 不写或使用插件内置脚本）。脚本默认拒绝覆盖非 `workflow-core` 导出的同名文件（支持从旧版中文头导出脚本无感升级）。未导出前可用插件内置脚本验证：
   ```bash
   WORKFLOW_HOST=HOST python3 "${CLAUDE_PLUGIN_ROOT}/scripts/vendor_check_docs.py" --output scripts/check_docs.py
   ```
@@ -61,19 +61,23 @@ bash "${CLAUDE_PLUGIN_ROOT}/skills/init/detect.sh" .
 
 把仍然未知或有歧义的项集中一次提问（有提问工具就用选项形式，每项给推荐值），常见待问项：
 
+- 配置与文档语言：项目已有文档为主的语言，未检测到已有文档时默认**英文**（`en`）；若用户明确偏好中文文档或当前全为中文项目则选用 `zh`（空白项目且意图不明确时一并确认）
 - 默认验证平台（例如只有 `android/ ios/ web/` 目录，没有写明默认验证哪个）
 - 尚未存在 `scripts/check_docs.py` 时，是否导出自包含的 `scripts/check_docs.py`（默认推荐导出；如不希望在仓库内放置 Python 检查脚本可跳过）
 - 同一文件里有多个候选的权威设计文件
 - 非完整档的交接目录有多个项目约定时，确认 `handoff.default`；没有项目约定时用模板默认值。
 - 标准档、完整档分别跑哪条命令（只找到一条检查命令时可以都用它）
 
-能从仓库确认的不要问。用户没回答的项写“待确认”，不填示例值。
+能从仓库确认的不要问。用户没回答的项在英文模板写 `TBD`（不适用写 `none`）、中文模板写“待确认”（不适用写“无”），不填示例值。
 
 ## 3. 展示草稿，确认后写入
 
-1. 按 `${CLAUDE_PLUGIN_ROOT}/templates/ai-workflow.yaml` 的结构生成配置：保留模板头部的格式说明注释，删掉示例值，不适用的写“无”，未确认的写“待确认”。只写脚本和技能能直接取用的事实；规则类说明（如“iOS 仅在明确要求时验证”的理由）留在项目 `docs/`，不写进配置。
+1. **按语言选择模板目录**：
+   - **默认英文（`en`）**：使用 `${CLAUDE_PLUGIN_ROOT}/templates/ai-workflow.yaml` 与 `${CLAUDE_PLUGIN_ROOT}/templates/docs/`（默认路径 `docs/product/index.md`、`docs/product/requirements/prd.md`、`docs/product/tasks`、`docs/product/tasks/overview.md`、`docs/product/design/index.md`、`docs/product/glossary.md`），未确认写 `TBD`，不适用写 `none`。
+   - **中文项目（`zh`）**：当项目已有中文产品/工程文档或用户选择中文文档时，使用 `${CLAUDE_PLUGIN_ROOT}/templates/zh/ai-workflow.yaml` 与 `${CLAUDE_PLUGIN_ROOT}/templates/zh/docs/`（对应 `docs/product/项目首页.md` 等中文路径），未确认写“待确认”，不适用写“无”。
+   - 保留对应模板头部的格式说明注释，删掉示例值。只写脚本和技能能直接取用的事实；规则类说明（如“iOS 仅在明确要求时验证”的理由）留在项目 `docs/`，不写进配置。
 2. 先展示「配置项 | 值 | 依据」表和将要写入的文件全文，等用户确认。
-3. 写入项目根目录 `ai-workflow.yaml`，然后在 Agent 入口文件加一行指针（如“工作流配置：根目录 `ai-workflow.yaml`”）：
+3. 写入项目根目录 `ai-workflow.yaml`，然后在 Agent 入口文件加一行指针（英文项目如 `Workflow config: ai-workflow.yaml at repo root.`；中文项目如“工作流配置：根目录 `ai-workflow.yaml`”）：
    - 优先写 `AGENTS.md`。在 Codex 或 Cursor 中缺少它时新建；在 Claude Code 中，若项目只有独立的 `CLAUDE.md`，可更新该文件。
    - 两者都没有：新建 `AGENTS.md`，并询问是否同时新建只含 `@AGENTS.md` 的 `CLAUDE.md`。
    - 写入前用 `git check-ignore -v <文件>` 检查 `ai-workflow.yaml`、入口文件和 `docs/` 是否被忽略；被忽略时团队拿不到配置，先告诉用户命中的规则，由用户决定改 `.gitignore` 还是换位置，不擅自修改。
@@ -82,43 +86,43 @@ bash "${CLAUDE_PLUGIN_ROOT}/skills/init/detect.sh" .
 
 ## 4. 文档骨架（只补缺失的）
 
-模板在 `${CLAUDE_PLUGIN_ROOT}/templates/docs/`，生成规则见其中的 `README.md`。支持两种工程规范骨架：
+英文默认模板在 `${CLAUDE_PLUGIN_ROOT}/templates/docs/`，中文模板在 `${CLAUDE_PLUGIN_ROOT}/templates/zh/docs/`，生成规则见其中的 `README.md`。支持两种工程规范骨架：
 - **精简模式（推荐中小项目）**：仅生成单份 `docs/development/standards.md`（≤200 行，整合架构/代码/验证底线），`baseline.required` 指向该单文件，降低上下文占用。
 - **拆分模式（大型项目）**：分别生成 `coding.md`、`architecture.md`、`testing.md`。
 
-完整默认结构：
+完整默认结构（默认英文路径；中文项目对应使用 `项目首页.md`、`需求/需求说明.md`、`任务/版本任务总览.md`、`设计/设计索引.md`、`术语表.md`、`任务/<模块>.md`）：
 
 ```
-docs/product/项目首页.md                 init
-docs/product/需求/需求说明.md            init
-docs/product/任务/版本任务总览.md        init
-docs/product/设计/设计索引.md            init，有设计工具时
-docs/product/术语表.md                  init，只建骨架，不预填词条
-docs/development/standards.md           init（精简模式，与下方三份二选一）
-docs/development/coding.md              init（拆分模式）
-docs/development/architecture.md        init（拆分模式）
-docs/development/testing.md             init（拆分模式）
-docs/development/ui.md                  init，有界面时
-docs/development/api-integration.md     init，有后端接口时
-docs/product/任务/<模块>.md              prd-breakdown 首次拆出该模块时
+docs/product/index.md                         init
+docs/product/requirements/prd.md              init
+docs/product/tasks/overview.md                init
+docs/product/design/index.md                  init，有设计工具时
+docs/product/glossary.md                      init，只建骨架，不预填词条
+docs/development/standards.md                 init（精简模式，与下方三份二选一）
+docs/development/coding.md                    init（拆分模式）
+docs/development/architecture.md              init（拆分模式）
+docs/development/testing.md                   init（拆分模式）
+docs/development/ui.md                        init，有界面时
+docs/development/api-integration.md           init，有后端接口时
+docs/product/tasks/<module>.md                prd-breakdown 首次拆出该模块时
 docs/development/changes/<task-id>/proposal.md  完整档批准并进入实施后
 docs/development/changes/<task-id>/design.md    完整档批准并进入实施后
 docs/development/changes/<task-id>/handoff.md   完整档首次跨会话交接时
-docs/development/handoffs/<task-id>.md  其他档位首次跨会话交接时
+docs/development/handoffs/<task-id>.md        其他档位首次跨会话交接时
 ```
 
-1. **先映射已有文档**：项目已有承担同一角色的文档（如 `doc/测试说明.md`、`wiki/架构.md`），不新建，把它的路径写进 `ai-workflow.yaml` 对应键；文件名不同但职责相同也算已有。
+1. **先映射已有文档**：项目已有承担同一角色的文档（如 `doc/测试说明.md`、`wiki/architecture.md`），不新建，把它的路径写进 `ai-workflow.yaml` 对应键；文件名不同但职责相同也算已有。
 2. **列清单再写**：展示「文档 | 状态（新建 / 已有·映射到 X / 不适用及原因）」，确认后再创建。只创建缺失的文件，**已有文件一律不覆盖、不改写**。
 3. **填事实，不留空壳**：用第 1 步探测到的事实替换 `{{...}}` 占位符——
    - `testing.md`：真实存在的检查命令、CI 命令、默认验证平台，与配置一致；
-   - `architecture.md`：按现有顶层目录推断分层职责，每行标「待确认」请用户核对；
+   - `architecture.md`：按现有顶层目录推断分层职责，每行标 `TBD` / 「待确认」请用户核对；
    - `coding.md`：格式化/分析配置文件、生成代码命令；
-   - `设计索引.md`、`api-integration.md`：设计工具与权威文件、接口工具与项目；
-   - `项目首页.md`：项目名、一句话说明，并**只保留已生成或已映射文档的链接**。
-   确实不知道的写「待确认」；删除模板里的 `<!-- 说明 -->` 注释，保留工程规范开头的“本文维护 / 不写这里”边界句（`implement` 与 `review` 依据它判断文档放置）。映射到已有文档时不改写原文，只在清单里提示用户可补这句边界。
+   - `design/index.md`（或 `设计索引.md`）、`api-integration.md`：设计工具与权威文件、接口工具与项目；
+   - `index.md`（或 `项目首页.md`）：项目名、一句话说明，并**只保留已生成或已映射文档的链接**。
+   确实不知道的写 `TBD`（中文文档写「待确认」）；删除模板里的 `<!-- Note: ... -->` / `<!-- 说明：... -->` 注释，保留工程规范开头的维护边界句（`implement` 与 `review` 依据它判断文档放置）。映射到已有文档时不改写原文，只在清单里提示用户可补这句边界。
 4. 术语表只建骨架：可以从 PRD、任务卡、规格和代码中提取候选词列给用户，**只有用户确认了定义的词才写入**，不替业务方编造定义。
 5. 生成后运行 `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_docs.py" --root . --check-config`，链接和配置路径必须全部通过。
-6. `ai-workflow.yaml` 里的文档路径与实际生成/映射的位置保持一致（默认设计索引为 `docs/product/设计/设计索引.md`）。
+6. `ai-workflow.yaml` 里的文档路径与实际生成/映射的位置保持一致（默认英文设计索引为 `docs/product/design/index.md`，中文为 `docs/product/设计/设计索引.md`）。
 
 ## 5. 插件建议（可选）
 

@@ -17,7 +17,7 @@ SCRIPTS_DIR = Path(__file__).resolve().parent
 PLUGIN_JSON = SCRIPTS_DIR.parent / '.claude-plugin/plugin.json'
 CONFIG_SRC = SCRIPTS_DIR / 'workflow_config.py'
 DOCS_SRC = SCRIPTS_DIR / 'check_docs.py'
-VENDOR_MARKER = '来源：workflow-core '
+VENDOR_MARKERS = ('Source: workflow-core ', '来源：workflow-core ')
 
 
 def is_vendored_file(path):
@@ -27,7 +27,7 @@ def is_vendored_file(path):
             head = handle.read(4096)
     except OSError:
         return False
-    return VENDOR_MARKER in head
+    return any(marker in head for marker in VENDOR_MARKERS)
 
 
 def _strip_header(source):
@@ -63,17 +63,17 @@ def render_standalone():
 
     config_body = _strip_header(config_raw).rstrip() + '\n'
     docs_body = _strip_header(docs_raw)
-    import_line = 'from workflow_config import ConfigError, load as load_config'
+    import_line = 'from workflow_config import ConfigError, is_placeholder, load as load_config'
     if import_line not in docs_body:
         raise RuntimeError(f'未找到预期导入行：{import_line}')
     docs_body = docs_body.replace(import_line, 'load_config = load', 1).rstrip() + '\n'
 
     header = (
         '#!/usr/bin/env python3\n'
-        '"""自包含文档规范检查脚本（只读，仅依赖 Python 标准库，可直接提交至消费项目）。\n'
+        '"""Standalone documentation checker (read-only, Python stdlib only; safe to commit).\n'
         '\n'
-        f'来源：workflow-core {version} (source-sha256: {digest})\n'
-        '重新生成：python3 <workflow-core>/scripts/vendor_check_docs.py --output scripts/check_docs.py\n'
+        f'Source: workflow-core {version} (source-sha256: {digest})\n'
+        'Regenerate: python3 <workflow-core>/scripts/vendor_check_docs.py --output scripts/check_docs.py\n'
         '"""\n\n'
     )
     return (

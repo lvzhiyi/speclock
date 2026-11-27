@@ -1,12 +1,12 @@
-# 任务交接：<task-id>
-更新时间：<日期时间及时区>
-状态：进行中 / 已暂停 / 受阻 / 实施完成，待验证 / 已结束
-目标与验收：<链接规格或 Issue，补充本次边界>
-位置：<仓库/工作目录、分支、HEAD 提交>
-工作区：<本任务修改文件、未跟踪文件、用户已有修改与归属不明部分>
-进度：<引擎步骤 ID 与剩余工作>
-关键决定：<结论、依据、批准记录位置；未决问题>
-验证：<命令、时间、退出码、对应代码状态、失败与未验证项>
-运行中操作：<命令、输出/日志位置；没有写“无”；不含凭据>
-阻塞与恢复条件：<无，或链接本任务的受阻证据>
-下一步：<先读哪个文件、执行哪条命令或确认哪个问题>
+# Task Handoff: <task-id>
+Updated: <YYYY-MM-DD HH:MM TZ>
+Status: In Progress / Paused / Blocked / Implemented, Pending Verification / Closed
+Goal & Acceptance: <link to spec/issue and current scope boundary>
+Location: <repo/workdir, branch, HEAD commit>
+Workspace: <modified files, untracked files, pre-existing user changes and unclear ownership>
+Progress: <engine step IDs and remaining work>
+Key Decisions: <conclusions, rationale, approval record location; open questions>
+Verification: <command, timestamp, exit code, code state, failures and unverified items>
+Running Processes: <commands and log paths, or "none"; no credentials>
+Blockers & Resume Condition: <none, or link to blocker evidence>
+Next Step: <first file to read, command to run, or question to confirm>

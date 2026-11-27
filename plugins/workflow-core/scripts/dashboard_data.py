@@ -257,7 +257,7 @@ def _documents(root, config, issues):
     paths = set()
     for key in workflow_config.SCHEMA["docs"]:
         value = config.get("docs." + key)
-        if not value or value in workflow_config.PLACEHOLDERS:
+        if not value or workflow_config.is_placeholder(value):
             continue
         try:
             rel = _relative(value)

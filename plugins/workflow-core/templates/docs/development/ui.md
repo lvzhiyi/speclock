@@ -1,23 +1,23 @@
-# UI 规范
+# UI Standards
 
-本文维护设计来源、主题与公共样式规则；单页面设计值与视觉差异写在设计索引，页面完成状态写在任务卡，不写这里。
+Maintain design sources, themes, and shared styling rules here; per-screen design values and visual diffs live in the design index, and screen completion status lives in task cards.
 
-<!-- 说明：区分设计原值与项目统一规则；不把推导值写成设计原始规范。 -->
+<!-- Note: distinguish original design values from project-wide rules; never present inferred values as authoritative design specs. -->
 
-## 设计来源
+## Design Source
 
-- 权威设计见[设计索引](../product/设计/设计索引.md)。
+- Authoritative Design: see [Design Index](../product/design/index.md).
 
-## 主题与样式入口
+## Theme & Style Entrypoints
 
-- 主题/样式入口：{{例如 lib/resources/theme.dart / src/styles}}
-- 优先级：页面明确的设计值覆盖全局默认值；覆盖值集中在页面样式文件并注明节点依据。
+- Theme / Style Entrypoint: {{e.g. lib/resources/theme.dart / src/styles}}
+- Precedence: screen-specific design values override global defaults; keep overrides in page style files with node references.
 
-## 色彩、字体、间距
+## Colors, Typography & Spacing
 
-<!-- 说明：从设计工具读取共享样式后填写；未读取前写「待确认」。 -->
+<!-- Note: fill in after reading shared styles from the design tool; write "TBD" until inspected. -->
 
-## 状态与适配
+## States & Responsiveness
 
-- 普通、聚焦、错误、禁用、加载状态分别核对；未接入的操作不给出“成功”反馈。
-- 适配：{{窄屏、文字缩放、键盘、深色等适用场景}}
+- Verify normal, focused, error, disabled, and loading states; unwired actions must not show fake "success" feedback.
+- Responsiveness: {{narrow screens, text scaling, keyboard, dark mode, or applicable targets}}

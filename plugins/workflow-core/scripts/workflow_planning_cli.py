@@ -9,16 +9,23 @@ import sys
 import time
 import uuid
 
-from workflow_config import Config, load, validate
+from workflow_config import Config, is_placeholder, load, validate
 from workflow_engine_cli import default_db
 
 MAX_TTL = 3600
-DOC_DEFAULTS = {
+DOC_DEFAULTS_EN = {
+    "product_root": "docs/product", "cards_dir": "docs/product/tasks",
+    "home": "docs/product/index.md", "requirements": "docs/product/requirements/prd.md",
+    "overview": "docs/product/tasks/overview.md", "glossary": "docs/product/glossary.md",
+    "design_index": "docs/product/design/index.md", "dev_docs": "docs/development",
+}
+DOC_DEFAULTS_ZH = {
     "product_root": "docs/product", "cards_dir": "docs/product/任务",
     "home": "docs/product/项目首页.md", "requirements": "docs/product/需求/需求说明.md",
     "overview": "docs/product/任务/版本任务总览.md", "glossary": "docs/product/术语表.md",
     "design_index": "docs/product/设计/设计索引.md", "dev_docs": "docs/development",
 }
+DOC_DEFAULTS = DOC_DEFAULTS_EN
 ENTRIES = {"README.md", "AGENTS.md", "CLAUDE.md"}
 
 
@@ -77,22 +84,41 @@ def legal_target(root, operation, value, config):
         return path
     if Path(path).suffixes != [".md"] or any(Path(p).suffix for p in Path(path).parts[:-1]):
         raise ValueError("规划只允许 Markdown 文档目标")
-    def doc(key):
-        product = config.get("docs.product_root", DOC_DEFAULTS["product_root"])
-        fallback = DOC_DEFAULTS[key]
+    product = config.get("docs.product_root", DOC_DEFAULTS_EN["product_root"])
+
+    def rebase(table, key):
+        fallback = table[key]
         if fallback.startswith("docs/product/"):
-            fallback = product + fallback[len("docs/product"):]
-        return config.get("docs." + key, fallback)
-    exact = {safe_path(root, doc(key)) for key in ("home", "requirements", "overview", "glossary", "design_index") if doc(key) not in ("无", "待确认")}
+            return product + fallback[len("docs/product"):]
+        return fallback
+
+    exact = set()
+    for key in ("home", "requirements", "overview", "glossary", "design_index"):
+        configured = config.get("docs." + key)
+        if configured is not None:
+            if not is_placeholder(configured):
+                exact.add(safe_path(root, configured))
+        else:
+            exact.add(safe_path(root, rebase(DOC_DEFAULTS_EN, key)))
+            exact.add(safe_path(root, rebase(DOC_DEFAULTS_ZH, key)))
     if path in exact:
         return path
-    cards = safe_path(root, doc("cards_dir"))
-    if operation in ("prd-breakdown", "clarify") and Path(path).parent.as_posix() == cards:
+    configured_cards = config.get("docs.cards_dir")
+    if configured_cards is not None:
+        allowed_cards = set() if is_placeholder(configured_cards) else {safe_path(root, configured_cards)}
+    else:
+        allowed_cards = {
+            safe_path(root, rebase(DOC_DEFAULTS_EN, "cards_dir")),
+            safe_path(root, rebase(DOC_DEFAULTS_ZH, "cards_dir")),
+        }
+    if operation in ("prd-breakdown", "clarify") and Path(path).parent.as_posix() in allowed_cards:
         return path
     if operation == "init":
-        dev = safe_path(root, doc("dev_docs"))
-        if path in {dev + "/" + name + ".md" for name in ("standards", "coding", "architecture", "testing", "ui", "api-integration")}:
-            return path
+        raw_dev = config.get("docs.dev_docs", DOC_DEFAULTS_EN["dev_docs"])
+        if not is_placeholder(raw_dev):
+            dev = safe_path(root, raw_dev)
+            if path in {dev + "/" + name + ".md" for name in ("standards", "coding", "architecture", "testing", "ui", "api-integration")}:
+                return path
     raise ValueError("目标不属于本操作的规划文档：" + path)
 
 

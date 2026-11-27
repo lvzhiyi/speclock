@@ -8,8 +8,8 @@ import re
 import stat
 import uuid
 
-from workflow_config import ConfigError, load
-from workflow_planning_cli import DOC_DEFAULTS, safe_path
+from workflow_config import ConfigError, is_placeholder, load
+from workflow_planning_cli import DOC_DEFAULTS_EN, DOC_DEFAULTS_ZH, safe_path
 
 from .model import EngineError
 from .snapshot import capture, capture_files, fingerprint, sensitive
@@ -33,6 +33,21 @@ FIELD = re.compile(
 CHECKED_BOX = re.compile(r'^- \[[xX]\] ')
 
 
+def _cards_dirs(root, config):
+    configured = config.get('docs.cards_dir')
+    if configured is not None:
+        return [] if is_placeholder(configured) else [Path(safe_path(root, configured))]
+    raw_product = config.get('docs.product_root')
+    product = DOC_DEFAULTS_EN['product_root'] if raw_product is None or is_placeholder(raw_product) else raw_product
+    candidates = []
+    for table in (DOC_DEFAULTS_EN, DOC_DEFAULTS_ZH):
+        fallback = table['cards_dir']
+        if fallback.startswith('docs/product/'):
+            fallback = product + fallback[len('docs/product'):]
+        candidates.append(fallback)
+    return [Path(safe_path(root, candidate)) for candidate in dict.fromkeys(candidates)]
+
+
 def validate_binding(root, binding):
     if (not isinstance(binding, dict) or set(binding) != {'path', 'id'}
             or not isinstance(binding['path'], str) or Path(binding['path']).is_absolute()
@@ -40,9 +55,11 @@ def validate_binding(root, binding):
         raise EngineError('CARD_INVALID', '任务卡绑定需要仓库相对 path 和卡内标题 ID')
     try:
         config = load(root)
-        directory = Path(safe_path(root, config.get('docs.cards_dir') or DOC_DEFAULTS['cards_dir']))
+        directories = _cards_dirs(root, config)
         path = Path(safe_path(root, binding['path']))
-        if path.as_posix() != binding['path'] or directory not in path.parents or path.suffix != '.md' or sensitive(path):
+        if (path.as_posix() != binding['path']
+                or not any(directory in path.parents for directory in directories)
+                or path.suffix != '.md' or sensitive(path)):
             raise ValueError('任务卡必须是任务卡目录下的 Markdown 文件')
     except (ValueError, OSError, ConfigError) as error:
         raise EngineError('CARD_INVALID', '任务卡路径无效或不在配置的任务卡目录内') from error
@@ -121,35 +138,36 @@ def find_card(root, card_id):
     root_path = Path(root).resolve()
     try:
         config = load(root_path)
-        rel_dir = Path(safe_path(root_path, config.get('docs.cards_dir') or DOC_DEFAULTS['cards_dir']))
+        rel_dirs = _cards_dirs(root_path, config)
     except (OSError, ConfigError, ValueError, EngineError):
         return None
-    cards_dir = root_path / rel_dir
-    if cards_dir.is_symlink() or not cards_dir.is_dir():
-        return None
-    try:
-        entries = sorted(cards_dir.iterdir(), key=lambda p: p.name)
-    except OSError:
-        return None
     matches = []
-    for entry in entries:
-        if entry.suffix != '.md' or entry.is_symlink() or not entry.is_file():
-            continue
-        rel_file = rel_dir / entry.name
-        if sensitive(rel_file):
+    for rel_dir in rel_dirs:
+        cards_dir = root_path / rel_dir
+        if cards_dir.is_symlink() or not cards_dir.is_dir():
             continue
         try:
-            with open_parent(root_path, rel_file) as directory:
-                data, _ = read_card(directory, entry.name)
-            _, sections, _, _ = _scan(data, card_id)
-        except (OSError, EngineError):
+            entries = sorted(cards_dir.iterdir(), key=lambda p: p.name)
+        except OSError:
             continue
-        if sections > 1:
-            return None
-        if sections == 1:
-            matches.append(rel_file.as_posix())
-            if len(matches) > 1:
+        for entry in entries:
+            if entry.suffix != '.md' or entry.is_symlink() or not entry.is_file():
+                continue
+            rel_file = rel_dir / entry.name
+            if sensitive(rel_file):
+                continue
+            try:
+                with open_parent(root_path, rel_file) as directory:
+                    data, _ = read_card(directory, entry.name)
+                _, sections, _, _ = _scan(data, card_id)
+            except (OSError, EngineError):
+                continue
+            if sections > 1:
                 return None
+            if sections == 1:
+                matches.append(rel_file.as_posix())
+                if len(matches) > 1:
+                    return None
     return {'path': matches[0], 'id': card_id} if len(matches) == 1 else None
 
 

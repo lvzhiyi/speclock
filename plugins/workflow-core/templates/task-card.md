@@ -1,16 +1,16 @@
 <!--
-原位填写项目既有模块卡，不另建重复状态表；未知项写“待确认”，未建链接写“未建立”。
-标题使用 ### <模块>-R<编号> <标题>；执行轮次、基线回执、TDD 与验证/评审尝试由工作流引擎维护，状态历史由 Git 承载，不在卡内重复填写。
-Agent 评审通过与人工验收/交付分离；勾选 [x] 仅用于已确认终态，不得与非终态协作状态并存。
-协作状态为「评审通过，待人工验收 / 已验收 / 已完成 / 已交付」或勾选 [x] 时，引擎会自动关闭本机未开工的同名任务。
+Update existing module cards in place without creating duplicate status tables; write "TBD" for unknown fields and "none" for missing links.
+Use heading ### <MODULE>-R<N> <Title>; rounds, baseline receipts, TDD, and verification/review attempts are tracked by the workflow engine, and state history lives in Git.
+Agent review_passed is separate from human acceptance/delivery; check [x] only after confirmed terminal delivery, never alongside a non-terminal status.
+When Status is "Review Passed, Pending Human Acceptance" / "Accepted" / "Completed" / "Delivered" or [x] is checked, the engine automatically closes unstarted local drafts for the same task.
 -->
 
-### <模块>-R<编号> <标题>
+### <MODULE>-R<N> <Title>
 
-- [ ] 子需求完成（仅人工确认终态后勾选）
-- 协作状态：待处理
-- 来源：<需求原文版本/章节、本地需求/Issue 或设计节点链接>
-- 范围与非目标：<本次目标范围；明确不含什么>
-- 验收：<核心成功/异常/边界场景及关键性能安全约束>
-- 依赖与待确认：<上游依赖或阻塞缺项及恢复条件；无写“无”>
-- 关联变更 / 人工确认：<`docs/development/changes/<task-id>/` 链接或人工验收/交付结论；未进行可省略>
+- [ ] Subtask completed (check only after human acceptance/delivery)
+- Status: Pending
+- Source: <PRD version/section, local requirement/issue, or design node link>
+- Scope & Non-goals: <in-scope deliverables; explicit exclusions>
+- Acceptance: <core success/error/edge scenarios and key performance/security constraints>
+- Dependencies & Pending: <upstream dependencies or blocking open questions + resume condition; "none" if clear>
+- Related Change / Human Confirmation: <`docs/development/changes/<task-id>/` link or human acceptance/delivery note; omit if not started>

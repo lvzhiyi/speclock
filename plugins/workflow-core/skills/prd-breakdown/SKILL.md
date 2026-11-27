@@ -11,9 +11,9 @@ description: PRD 需求接收、同步与拆解。用户提供 PRD/需求文档/
 
 需求、卡和规格的用词以术语表（`docs.glossary`）为准；PRD 里出现表中没有、含糊或一词多义的业务词时，列为“术语待确认”并给出建议定义，用户确认后写入术语表，不擅自定义。
 
-**缺文档时按需生成**：
-- 需求说明、版本任务总览、项目首页不存在：说明项目还没初始化，建议先加载 `init` 技能；用户要求直接开始时，只从 `${CLAUDE_PLUGIN_ROOT}/templates/docs/product/` 补建本次要写的那几个文件。
-- **模块卡**在首次拆出某个模块时创建：`product/任务/<模块>.md`，一级标题为模块名，子需求按 `${CLAUDE_PLUGIN_ROOT}/templates/task-card.md` 填写，并在版本任务总览加一行入口。已有模块卡则追加子需求，不另建文件。
+**缺文档时按需生成**（默认使用英文模板 `${CLAUDE_PLUGIN_ROOT}/templates/`；若项目已有中文文档或配置，使用 `${CLAUDE_PLUGIN_ROOT}/templates/zh/`）：
+- 需求说明、版本任务总览、项目首页不存在：说明项目还没初始化，建议先加载 `init` 技能；用户要求直接开始时，只从 `${CLAUDE_PLUGIN_ROOT}/templates/docs/product/`（中文项目用 `templates/zh/docs/product/`）补建本次要写的那几个文件。
+- **模块卡**在首次拆出某个模块时创建：按 `docs.cards_dir`（默认英文 `product/tasks/<module>.md`，中文项目 `product/任务/<模块>.md`），一级标题为模块名，子需求按 `${CLAUDE_PLUGIN_ROOT}/templates/task-card.md`（中文用 `templates/zh/task-card.md`）填写，并在版本任务总览加一行入口。已有模块卡则追加子需求，不另建文件。
 - 只创建缺失文件，不覆盖已有内容。
 
 
@@ -65,7 +65,7 @@ WORKFLOW_HOST=HOST python3 "${CLAUDE_PLUGIN_ROOT}/scripts/workflow_planning_cli.
 
 ## 5. 子需求拆分
 
-按**可独立验收的业务结果**拆分，不只按页面或“前端/后端/测试”拆。模块卡只保留业务核心字段（模板见 `${CLAUDE_PLUGIN_ROOT}/templates/task-card.md`），**不把引擎状态或 Git 历史复制到 Markdown**：
+按**可独立验收的业务结果**拆分，不只按页面或“前端/后端/测试”拆。模块卡只保留业务核心字段（模板见 `${CLAUDE_PLUGIN_ROOT}/templates/task-card.md`，中文用 `templates/zh/task-card.md`），**不把引擎状态或 Git 历史复制到 Markdown**：
 
 - 稳定编号与标题（`### <模块>-R<编号> <标题>`）、完成勾选框与独立 `协作状态`
 - 来源（需求原文版本/章节、本地需求或设计节点链接）

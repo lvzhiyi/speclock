@@ -1,21 +1,21 @@
-# 接口联调约定
+# API Integration Standards
 
-本文维护本项目的契约来源、联调环境与测试数据约定；具体接口字段与联调状态以接口工具和对应技术任务为准，不写这里。
+Maintain contract sources, integration environments, and test data conventions here; per-endpoint schemas and integration status belong in the API tool and corresponding technical tasks.
 
-<!-- 说明：通用的契约确认清单、Mock 与真实联调口径由 workflow-core:api-contract 提供，这里只写本项目事实。 -->
+<!-- Note: generic contract verification, mocking, and integration checklists come from workflow-core:api-contract; keep only project-specific facts here. -->
 
-## 契约来源
+## Contract Source
 
-- 接口工具：{{例如 Apifox 项目「名称」，项目 ID 见 .apifox/settings.json}}
-- 本次契约变更记录在关联提案、设计文档或 Issue。
+- API Tool: {{e.g. Apifox project "<name>", project ID in .apifox/settings.json}}
+- Record contract changes in the linked proposal, design doc, or issue.
 
-## 项目接入边界
+## Integration Boundaries
 
-- 环境与地址注入方式：{{例如 --dart-define / .env}}；构建参数不放凭据。
-- 响应包裹与成功码：{{待确认}}
-- 鉴权与过期处理：{{待确认}}
-- Mock 只放测试或明确的开发入口，生产路径不返回成功假数据。
+- Environment & Base URL Injection: {{e.g. --dart-define / .env}}; never put credentials in build flags.
+- Response Envelope & Success Code: {{TBD}}
+- Auth & Token Expiration Handling: {{TBD}}
+- Restrict mocks to tests or explicit dev entrypoints; production paths must never return fake success data.
 
-## 测试账号与数据
+## Test Accounts & Data
 
-- 账号与数据通过团队安全渠道提供，文档只记录角色和引用位置，不写凭据。
+- Share accounts and fixtures through secure team channels; document roles and reference locations here without credentials.

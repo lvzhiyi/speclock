@@ -15,13 +15,14 @@ class VendorCheckDocsTests(unittest.TestCase):
             project = Path(tmp) / 'consumer'
             out_script = project / 'scripts/check_docs.py'
 
-            # 1. 导出单文件脚本
+            # 1. 导出单文件脚本（英文头）
             res = subprocess.run(
                 [sys.executable, str(VENDOR), '--output', str(out_script)],
                 capture_output=True, text=True, check=False,
             )
             self.assertEqual(res.returncode, 0, res.stderr)
             self.assertTrue(out_script.is_file())
+            self.assertIn('Source: workflow-core ', out_script.read_text(encoding='utf-8'))
 
             # 2. --check 校验一致
             chk = subprocess.run(
@@ -53,7 +54,7 @@ class VendorCheckDocsTests(unittest.TestCase):
             self.assertEqual(run_ok.returncode, 0, run_ok.stdout + run_ok.stderr)
             self.assertIn('status=PASS', run_ok.stdout)
 
-            # 4. 验证状态与勾选冲突会被单文件脚本拦截
+            # 4. 验证状态与勾选冲突会被单文件脚本拦截（含英文提示）
             card.write_text(
                 '### AUTH-R01 登录\n\n- [x] 子需求完成\n- 协作状态：评审通过，待人工验收\n'
                 '- 来源：PRD 第 1 节\n- 验收：登录成功\n',
@@ -64,7 +65,38 @@ class VendorCheckDocsTests(unittest.TestCase):
                 cwd=project, env=env, capture_output=True, text=True, check=False,
             )
             self.assertEqual(run_fail.returncode, 1, run_fail.stdout + run_fail.stderr)
-            self.assertIn('完成勾选框已勾选，但协作状态仍为非终态', run_fail.stderr)
+            self.assertIn('completion checkbox is checked [x], but status is still non-terminal', run_fail.stderr)
+
+            # 5. 验证英文任务卡也能被同一单文件脚本校验
+            card_en = cards / 'billing.md'
+            card_en.write_text(
+                '### BILL-R01 Checkout\n\n- [ ] Subtask completed\n- Status: Pending\n'
+                '- Source: PRD Section 2\n- Acceptance: Payment succeeds\n',
+                encoding='utf-8',
+            )
+            card.write_text(
+                '### AUTH-R01 登录\n\n- [x] 子需求完成\n- 协作状态：已完成\n'
+                '- 来源：PRD 第 1 节\n- 验收：登录成功\n',
+                encoding='utf-8',
+            )
+            run_both = subprocess.run(
+                [sys.executable, str(out_script), '--root', str(project), '--check-config'],
+                cwd=project, env=env, capture_output=True, text=True, check=False,
+            )
+            self.assertEqual(run_both.returncode, 0, run_both.stdout + run_both.stderr)
+
+    def test_refreshes_legacy_chinese_vendored_script_without_force(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project = Path(tmp) / 'legacy'
+            out_script = project / 'scripts/check_docs.py'
+            out_script.parent.mkdir(parents=True)
+            out_script.write_text('"""旧版脚本\n来源：workflow-core 0.30.1 (source-sha256: old)\n"""\n', encoding='utf-8')
+            refreshed = subprocess.run(
+                [sys.executable, str(VENDOR), '--output', str(out_script)],
+                capture_output=True, text=True, check=False,
+            )
+            self.assertEqual(refreshed.returncode, 0, refreshed.stdout + refreshed.stderr)
+            self.assertIn('Source: workflow-core ', out_script.read_text(encoding='utf-8'))
 
     def test_refuses_to_overwrite_non_vendored_script_unless_forced(self):
         with tempfile.TemporaryDirectory() as tmp:

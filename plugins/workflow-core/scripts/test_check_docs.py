@@ -1,8 +1,9 @@
-"""check_docs.py 的回归测试：python3 -m unittest discover -s plugins/workflow-core/scripts"""
+"""check_docs.py regression tests: python3 -m unittest discover -s plugins/workflow-core/scripts"""
 import contextlib
 import importlib.util
 import io
 from pathlib import Path
+import shutil
 import tempfile
 import unittest
 
@@ -15,6 +16,8 @@ spec.loader.exec_module(check_docs)
 
 COMPLETE = ('### DEMO-R01 示例\n\n- [ ] 子需求完成\n- 协作状态：待处理\n'
             '- 来源：需求说明第 1 节\n- 验收：示例\n')
+COMPLETE_EN = ('### DEMO-R01 Example\n\n- [ ] Subtask completed\n- Status: Pending\n'
+               '- Source: PRD Section 1\n- Acceptance: Example passes\n')
 
 
 class ProjectTestCase(unittest.TestCase):
@@ -45,11 +48,12 @@ class CardTests(ProjectTestCase):
 
     def test_complete_card_passes(self):
         self.assertEqual(self.cards(COMPLETE), [])
+        self.assertEqual(self.cards(COMPLETE_EN), [])
 
     def test_missing_fields_are_reported(self):
         errors = self.cards('### DEMO-R01 示例\n\n- 目标：示例\n')
         self.assertEqual(len(errors), 3)
-        self.assertTrue(all('DEMO-R01 缺少字段' in error for error in errors))
+        self.assertTrue(all('DEMO-R01 missing required field' in error for error in errors))
 
     def test_next_chapter_is_not_counted_as_card_field(self):
         errors = self.cards('### DEMO-R01 示例\n\n## 4. 其他\n\n' + COMPLETE.split('\n', 2)[2])
@@ -77,19 +81,19 @@ class CardTests(ProjectTestCase):
         self.assertIn('Impact:', missing_impact[0])
 
     def test_checked_box_conflicts_with_non_terminal_status(self):
-        for status in ('待确认', '待验证', '实施中', '评审通过，待人工验收', '已取消'):
+        for status in ('待确认', '待验证', '实施中', '评审通过，待人工验收', '已取消', 'In Progress', 'Pending Human Acceptance'):
             card = COMPLETE.replace('- [ ] ', '- [x] ').replace('待处理', status)
             errors = self.cards(card)
             self.assertEqual(len(errors), 1, status)
-            self.assertIn('完成勾选框已勾选，但协作状态仍为非终态', errors[0])
+            self.assertIn('completion checkbox is checked [x], but status is still non-terminal', errors[0])
         combined = ('### DEMO-R02 组合栏\n\n- [x] 子需求完成\n'
                     '- 协作状态 / 优先级：待确认 / P0\n- 来源：需求\n- 验收：通过\n')
         errors = self.cards(combined)
         self.assertEqual(len(errors), 1)
-        self.assertIn('非终态「待确认」', errors[0])
+        self.assertIn('"待确认"', errors[0])
 
     def test_checked_box_allows_terminal_status(self):
-        for status in ('已完成', '人工验收通过', '已交付'):
+        for status in ('已完成', '人工验收通过', '已交付', 'Completed', 'Delivered'):
             card = COMPLETE.replace('- [ ] ', '- [x] ').replace('待处理', status)
             self.assertEqual(self.cards(card), [], status)
 
@@ -106,8 +110,8 @@ class LinkTests(ProjectTestCase):
         self.write('docs/development/handoffs/T2.md', '[方案](../changes/T2/proposal.md)\n')
         code, output = self.run_main('--skip-cards')
         self.assertEqual(code, 1, output)
-        self.assertIn('docs/development/changes/T1/proposal.md: 链接目标不存在 design.md', output)
-        self.assertIn('docs/development/handoffs/T2.md: 链接目标不存在', output)
+        self.assertIn('docs/development/changes/T1/proposal.md: broken link target design.md', output)
+        self.assertIn('docs/development/handoffs/T2.md: broken link target', output)
 
     def test_broken_link_and_missing_anchor(self):
         self.write('docs/product/b.md', '# 标题 一\n\n## 重复\n\n## 重复\n')
@@ -115,13 +119,13 @@ class LinkTests(ProjectTestCase):
                                         '[bad](b.md#不存在) [gone](c.md) [web](https://x.y/z)\n')
         errors = check_docs.check_links(self.root, [self.root / 'docs/product/a.md'])
         self.assertEqual(len(errors), 2)
-        self.assertTrue(any('锚点不存在 b.md#不存在' in e for e in errors))
-        self.assertTrue(any('链接目标不存在 c.md' in e for e in errors))
+        self.assertTrue(any('missing heading anchor b.md#不存在' in e for e in errors))
+        self.assertTrue(any('broken link target c.md' in e for e in errors))
 
     def test_same_file_anchor(self):
         self.write('AGENTS.md', '# 入口\n\n[self](#入口) [bad](#没有)\n')
         errors = check_docs.check_links(self.root, [self.root / 'AGENTS.md'])
-        self.assertEqual(errors, ['AGENTS.md: 锚点不存在 #没有'])
+        self.assertEqual(errors, ['AGENTS.md: missing heading anchor #没有'])
 
 
 class ConfigTests(ProjectTestCase):
@@ -133,8 +137,8 @@ class ConfigTests(ProjectTestCase):
         self.write('product/cards/x.md', COMPLETE)
         code, output = self.run_main()
         self.assertEqual(code, 0, output)
-        self.assertIn('路径来源：ai-workflow.yaml', output)
-        self.assertIn('任务卡=product/cards', output)
+        self.assertIn('paths source=ai-workflow.yaml', output)
+        self.assertIn('cards_dir=product/cards', output)
 
     def test_invalid_yaml_is_blocked_not_defaulted(self):
         self.write('ai-workflow.yaml', 'version: 1\ndocs: [product]\n')
@@ -147,14 +151,14 @@ class ConfigTests(ProjectTestCase):
         self.write('ai-workflow.yaml', self.YAML)
         code, output = self.run_main('--check-config')
         self.assertEqual(code, 1)
-        self.assertIn('路径不存在 docs.product_root: product', output)
+        self.assertIn('missing path docs.product_root: product', output)
 
     def test_yaml_config_reports_card_errors(self):
         self.write('ai-workflow.yaml', self.YAML)
         self.write('product/cards/x.md', '### DEMO-R01 示例\n')
         code, output = self.run_main()
         self.assertEqual(code, 1)
-        self.assertIn('DEMO-R01 缺少字段', output)
+        self.assertIn('DEMO-R01 missing required field', output)
 
     def test_cli_overrides_config(self):
         self.write('ai-workflow.yaml', self.YAML)
@@ -165,8 +169,15 @@ class ConfigTests(ProjectTestCase):
     def test_defaults_without_config_and_missing_dirs(self):
         code, output = self.run_main()
         self.assertEqual(code, 0, output)
-        self.assertIn('路径来源：默认值', output)
-        self.assertIn('任务卡目录不存在，跳过', output)
+        self.assertIn('paths source=default', output)
+        self.assertIn('cards_dir=docs/product/tasks', output)
+        self.assertIn('directory missing, skipped', output)
+
+    def test_resolve_paths_detects_legacy_chinese_cards_dir(self):
+        self.write('docs/product/任务/auth.md', COMPLETE)
+        code, output = self.run_main()
+        self.assertEqual(code, 0, output)
+        self.assertIn('cards_dir=docs/product/任务', output)
 
     def test_missing_root_is_blocked(self):
         out = io.StringIO()
@@ -174,6 +185,21 @@ class ConfigTests(ProjectTestCase):
             code = check_docs.main(['--root', str(self.root / 'nope')])
         self.assertEqual(code, 2)
         self.assertIn('status=BLOCKED', out.getvalue())
+
+    def test_english_skeleton_templates_pass_check_config(self):
+        templates_dir = Path(__file__).resolve().parent.parent / 'templates'
+        shutil.copytree(templates_dir / 'docs' / 'product', self.root / 'docs' / 'product')
+        shutil.copytree(templates_dir / 'docs' / 'development', self.root / 'docs' / 'development')
+        self.write(
+            'ai-workflow.yaml',
+            'version: 1\ndocs:\n  product_root: docs/product\n  home: docs/product/index.md\n'
+            '  requirements: docs/product/requirements/prd.md\n  cards_dir: docs/product/tasks\n'
+            '  overview: docs/product/tasks/overview.md\n  design_index: docs/product/design/index.md\n'
+            '  dev_docs: docs/development\n  glossary: docs/product/glossary.md\n',
+        )
+        code, output = self.run_main('--check-config')
+        self.assertEqual(code, 0, output)
+        self.assertIn('status=PASS', output)
 
 
 class GlossaryTests(ProjectTestCase):
@@ -183,8 +209,28 @@ class GlossaryTests(ProjectTestCase):
                                            '### 子需求\n\n- 避免：需求点\n\n### 模块卡\n\n- 定义：重复\n')
         code, output = self.run_main()
         self.assertEqual(code, 1)
-        self.assertIn('词条「子需求」缺少「定义」', output)
-        self.assertIn('词条重名「模块卡」', output)
+        self.assertIn('glossary term "子需求" missing Definition', output)
+        self.assertIn('duplicate glossary term "模块卡"', output)
+
+    def test_english_glossary_and_placeholder_glossary(self):
+        self.write('ai-workflow.yaml', 'version: 1\ndocs:\n  glossary: docs/product/glossary.md\n')
+        self.write(
+            'docs/product/glossary.md',
+            '# Glossary\n\n### Module Card\n\n- Definition: Task card for one module.\n\n'
+            '### Subtask\n\n- Avoid: Bullet\n\n### Module Card\n\n- Definition: Duplicate\n',
+        )
+        code, output = self.run_main()
+        self.assertEqual(code, 1)
+        self.assertIn('glossary term "Subtask" missing Definition', output)
+        self.assertIn('duplicate glossary term "Module Card"', output)
+
+        self.write('docs/product/glossary.md', '# Glossary\n\n### Module Card\n\n- Definition: Task card.\n')
+        code_ok, output_ok = self.run_main()
+        self.assertEqual(code_ok, 0, output_ok)
+
+        self.write('ai-workflow.yaml', 'version: 1\ndocs:\n  glossary: none\n')
+        code_none, output_none = self.run_main('--check-config')
+        self.assertEqual(code_none, 0, output_none)
 
 
 if __name__ == '__main__':

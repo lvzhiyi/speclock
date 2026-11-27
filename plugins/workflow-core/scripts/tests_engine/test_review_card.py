@@ -303,3 +303,30 @@ class ReviewCardTests(unittest.TestCase):
         self.assertEqual(review_card.read_status(self.root.resolve(), {'path': CARD, 'id': 'MOD-R1-T1'}), {'status': '已完成', 'checked': False})
         rewritten = review_card.replace_status(sub_unchecked.encode(), 'MOD-R1-T1').decode('utf-8')
         self.assertEqual(rewritten, sub_unchecked.replace('- 协作状态：已完成', '- 协作状态：评审通过，待人工验收', 1))
+
+    def test_bilingual_default_cards_dirs_when_unconfigured_and_strict_when_configured(self):
+        root = self.root.resolve()
+        (root / 'ai-workflow.yaml').unlink()
+        en_card = root / 'docs/product/tasks/auth.md'
+        en_card.parent.mkdir(parents=True, exist_ok=True)
+        en_card.write_text('### AUTH-R01 Login\n- Status: Pending\n', encoding='utf-8')
+
+        self.assertEqual(
+            review_card.validate_binding(root, {'path': 'docs/product/tasks/auth.md', 'id': 'AUTH-R01'}),
+            Path('docs/product/tasks/auth.md'),
+        )
+        self.assertEqual(
+            review_card.validate_binding(root, {'path': 'docs/product/任务/我的模块.md', 'id': 'MOD-R1'}),
+            Path('docs/product/任务/我的模块.md'),
+        )
+        self.assertEqual(review_card.find_card(root, 'AUTH-R01'), {'path': 'docs/product/tasks/auth.md', 'id': 'AUTH-R01'})
+        self.assertEqual(review_card.find_card(root, 'MOD-R1'), {'path': 'docs/product/任务/我的模块.md', 'id': 'MOD-R1'})
+
+        (root / 'ai-workflow.yaml').write_text('version: 1\ndocs:\n  cards_dir: docs/product/tasks\n', encoding='utf-8')
+        self.assertEqual(
+            review_card.validate_binding(root, {'path': 'docs/product/tasks/auth.md', 'id': 'AUTH-R01'}),
+            Path('docs/product/tasks/auth.md'),
+        )
+        with self.assertRaises(EngineError):
+            review_card.validate_binding(root, {'path': 'docs/product/任务/我的模块.md', 'id': 'MOD-R1'})
+        self.assertIsNone(review_card.find_card(root, 'MOD-R1'))

@@ -1,14 +1,14 @@
-# 代码规范
+# Coding Standards
 
-本文维护本项目的编码约定；语言/框架通用写法由技术栈插件提供，具体模块的实现说明不写这里。
+Maintain project-specific coding conventions here; language/framework idioms come from stack plugins, and module-specific implementation notes do not belong here.
 
-<!-- 说明：探测不到的写「待确认」。 -->
+<!-- Note: write "TBD" for anything not detectable. -->
 
-- 格式与静态分析：{{格式化工具与配置文件，如 analysis_options.yaml / .eslintrc}}
-- 命名：{{类型、成员、文件的命名规则}}
-- 注释：{{例如：新增/修改的自定义函数写中文文档注释；关键值说明业务含义}}
-- 依赖：改依赖时同时检查锁文件；不带入凭据、生产地址或真实敏感数据。
+- Formatting & Static Analysis: {{formatter and linter config files, e.g. analysis_options.yaml / .eslintrc}}
+- Naming: {{naming conventions for types, members, and files}}
+- Comments: {{e.g. docstrings for public functions/classes; explain non-obvious business invariants}}
+- Dependencies: verify lockfiles when updating dependencies; never introduce credentials, production URLs, or real sensitive data.
 
-## 生成代码
+## Generated Code
 
-- {{生成命令与生成文件位置}}；生成文件不手改，改生成源后重新生成并审查 diff。
+- {{generation command and output path}}; never hand-edit generated files — update the source and review the regenerated diff.

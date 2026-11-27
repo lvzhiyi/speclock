@@ -134,7 +134,7 @@ class LoadTests(unittest.TestCase):
 
     def test_old_markdown_section_is_ignored(self):
         self.write('AGENTS.md', '## 工作流配置\n\n- 产品文档根：`md/product/`\n')
-        self.assertEqual(workflow_config.load(self.root).source, '默认值')
+        self.assertEqual(workflow_config.load(self.root).source, 'default')
 
     def test_yaml_file_is_loaded(self):
         self.write('ai-workflow.yaml', 'version: 1\ndocs:\n  product_root: yaml/product\n')
@@ -158,7 +158,7 @@ class LoadTests(unittest.TestCase):
 
     def test_no_config_is_empty(self):
         config = workflow_config.load(self.root)
-        self.assertEqual(config.source, '默认值')
+        self.assertEqual(config.source, 'default')
         self.assertIsNone(config.get('docs.product_root'))
 
     def test_invalid_yaml_raises_with_file_and_line(self):
@@ -187,6 +187,25 @@ class LoadTests(unittest.TestCase):
         config = workflow_config.load(self.root)
         self.assertEqual(config.missing_paths(), [])
         self.assertEqual(config.get('handoff.default'), 'docs/development/handoffs/{task_id}.md')
+
+    def test_english_and_chinese_placeholders_are_recognized(self):
+        for token in ('TBD', 'tbd', 'N/A', 'none', 'None', '待确认', '无'):
+            self.assertTrue(workflow_config.is_placeholder(token), token)
+        self.assertFalse(workflow_config.is_placeholder('docs/product/glossary.md'))
+        self.write(
+            'ai-workflow.yaml',
+            'version: 1\ndocs:\n  product_root: docs/product\n  glossary: none\n'
+            '  design_index: TBD\ndesign:\n  source_doc: N/A\n',
+        )
+        self.assertEqual(workflow_config.load(self.root).missing_paths(), ['docs.product_root: docs/product'])
+
+    def test_bilingual_config_templates_validate(self):
+        templates_dir = HERE.parent / 'templates'
+        for rel in ('ai-workflow.yaml', 'zh/ai-workflow.yaml'):
+            with self.subTest(template=rel):
+                data = parse((templates_dir / rel).read_text(encoding='utf-8'))
+                self.assertEqual(workflow_config.validate(data), [])
+                self.assertNotIn('engine', data)
 
 
 if __name__ == '__main__':

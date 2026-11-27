@@ -1,18 +1,18 @@
-# 架构规范
+# Architecture Standards
 
-本文维护长期有效的分层职责、模块依赖、状态归属、生命周期、鉴权与存储约束；页面清单、路由枚举、接入进度不写这里。
+Maintain durable layer responsibilities, module dependencies, state ownership, lifecycle, auth, and storage constraints here; page lists, route enums, and integration progress do not belong here.
 
-<!-- 说明：下面内容由 init 根据现有目录推断，标「待确认」的需要人工确认。 -->
+<!-- Note: inferred from existing directories by init; items marked "TBD" require human confirmation. -->
 
-## 分层与目录
+## Layers & Directories
 
-| 目录 | 职责 | 依据 |
+| Directory | Responsibility | Basis |
 | --- | --- | --- |
-| {{目录}} | {{推断的职责}} | 待确认 |
+| {{directory}} | {{inferred responsibility}} | TBD |
 
-## 约束
+## Constraints
 
-- 状态管理：{{推断或待确认}}
-- 网络与鉴权：{{推断或待确认}}
-- 本地存储：{{推断或待确认}}；敏感凭据只放安全存储。
-- 新能力先检查既有规格与进行中变更，按工作流分档处理。
+- State Management: {{inferred or TBD}}
+- Networking & Auth: {{inferred or TBD}}
+- Local Storage: {{inferred or TBD}}; store sensitive credentials only in secure storage.
+- Check existing specs and active changes before adding capabilities; follow workflow tiering.

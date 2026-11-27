@@ -1,6 +1,6 @@
 # SpecLock
 
-**English** | [简体中文](README.zh-CN.md) · [Full walkthrough (YouTube)](https://youtu.be/ZKFB6Ni0aZ4) · [v0.30.1](docs/development/release-0.30.1.md)
+**English** | [简体中文](README.zh-CN.md) · [Full walkthrough (YouTube)](https://youtu.be/ZKFB6Ni0aZ4) · [v0.31.0](docs/development/release-0.31.0.md)
 
 **Your coding agent says the tests passed. SpecLock requires the results before it accepts a review.**
 
@@ -126,4 +126,4 @@ Add this repo as a marketplace and select `workflow-core`, or load `plugins/work
 - **Workflow reference:** [Workflow skill](plugins/workflow-core/skills/workflow/SKILL.md#任务路径) · [Handling failed checks](plugins/workflow-core/skills/verify/SKILL.md#失败处理顺序) · [Engine protocol and CLI](docs/development/workflow-engine.md#cli-示例)
 - **Project tools:** [Read-only dashboard](plugins/workflow-core/skills/dashboard/SKILL.md) · [Local metrics](plugins/workflow-core/skills/metrics/SKILL.md) · [Standalone doc checker](plugins/workflow-core/scripts/vendor_check_docs.py)
 - **Optional plugins:** [`stack-flutter`](plugins/stack-flutter), [`design-pixso`](plugins/design-pixso), and [`api-apifox`](plugins/api-apifox). Claude Code can install the [combined preset](README.zh-CN.md#可选插件).
-- **Project links:** [Issues](https://github.com/lvzhiyi/speclock/issues) · [Release notes](docs/development/release-0.30.1.md) · [MIT License](LICENSE)
+- **Project links:** [Issues](https://github.com/lvzhiyi/speclock/issues) · [Release notes](docs/development/release-0.31.0.md) · [MIT License](LICENSE)

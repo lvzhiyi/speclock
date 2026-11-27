@@ -50,7 +50,7 @@ class ArchiveChangeTests(unittest.TestCase):
         self.write('docs/product/任务/模块.md', '[提案](../../development/changes/T1/proposal.md)\n')
         code, output = self.run_cli('--task', 'T1', '--month', '2026-11')
         self.assertEqual(code, 1, output)
-        self.assertIn('链接目标不存在', output)
+        self.assertIn('broken link target', output)
 
     def test_rejects_traversal_and_reserved_names(self):
         self.write('docs/development/changes/T1/proposal.md', '# T1\n')

@@ -345,3 +345,33 @@ class PlanningGateTests(unittest.TestCase):
         entries = [json.loads(line) for line in audit.read_text(encoding="utf-8").splitlines()]
         self.assertEqual(entries[0]["operation"], "clarify")
         self.assertIn("closed_at", entries[-1])
+
+    def test_english_default_paths_work_without_config_json(self):
+        (self.root / "ai-workflow.yaml").unlink()
+        (self.root / ".git").mkdir()
+        en_init_paths = (
+            "ai-workflow.yaml",
+            "AGENTS.md",
+            "docs/product/index.md",
+            "docs/product/requirements/prd.md",
+            "docs/product/tasks/overview.md",
+            "docs/product/glossary.md",
+            "docs/product/design/index.md",
+            "docs/development/standards.md",
+        )
+        argv = ["open", "--operation", "init"]
+        for path in en_init_paths:
+            argv.extend(["--path", path])
+        self.run_cli(*argv)
+        for path in en_init_paths:
+            self.assertIsNone(host_gate.pre_tool(self.event(file_path=path)), path)
+        self.run_cli("close")
+
+        (self.root / "ai-workflow.yaml").write_text("version: 1\ndocs:\n  glossary: none\n", encoding="utf-8")
+        self.run_cli("open", "--operation", "prd-breakdown", "--path", "docs/product/tasks/auth.md")
+        self.assertIsNone(host_gate.pre_tool(self.event(file_path="docs/product/tasks/auth.md")))
+        self.run_cli("close")
+
+        self.run_cli("open", "--operation", "clarify", "--path", "docs/product/tasks/auth.md")
+        self.assertIsNone(host_gate.pre_tool(self.event(file_path="docs/product/tasks/auth.md")))
+        self.run_cli("close")

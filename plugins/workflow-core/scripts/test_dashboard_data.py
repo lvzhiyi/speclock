@@ -97,13 +97,25 @@ class DashboardDataTest(unittest.TestCase):
         self.assertIn("迁移", data["mode"]["warning"])
 
     def test_template_without_engine_key_reads_database(self):
-        template = Path(__file__).parent.parent / "templates" / "ai-workflow.yaml"
-        self.write("ai-workflow.yaml", template.read_text(encoding="utf-8"))
-        self.database([{"id": "A", "root": str(self.root), "protocol_version": 2,
-                        "current_round": "r", "rounds": [{"id": "r", "state": "implementing"}]}])
+        for rel in ("ai-workflow.yaml", "zh/ai-workflow.yaml"):
+            with self.subTest(template=rel):
+                template = Path(__file__).parent.parent / "templates" / rel
+                self.write("ai-workflow.yaml", template.read_text(encoding="utf-8"))
+                if not self.db.exists():
+                    self.database([{"id": "A", "root": str(self.root), "protocol_version": 2,
+                                    "current_round": "r", "rounds": [{"id": "r", "state": "implementing"}]}])
+                data = self.build()
+                self.assertEqual(data["tasks"][0]["id"], "A")
+                self.assertEqual(data["mode"]["state"], "active")
+
+    def test_english_placeholders_are_skipped_by_dashboard(self):
+        self.write(
+            "ai-workflow.yaml",
+            "version: 1\ndocs:\n  glossary: none\n  design_index: TBD\n  overview: N/A\n",
+        )
         data = self.build()
-        self.assertEqual(data["tasks"][0]["id"], "A")
-        self.assertEqual(data["mode"]["state"], "active")
+        self.assertEqual(data["issues"], [])
+        self.assertEqual(data["documents"], [])
 
     def test_missing_engine_key_does_not_create_missing_database(self):
         self.write("ai-workflow.yaml", "version: 1\n")

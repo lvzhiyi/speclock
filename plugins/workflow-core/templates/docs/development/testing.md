@@ -1,23 +1,23 @@
-# 验证规范
+# Testing & Verification Standards
 
-本文维护检查命令、默认验证平台与验证口径；单个测试的覆盖场景写在测试文件头注释，验证结果与缺口写在任务卡，不写这里。
+Maintain check commands, default verification platforms, and verification criteria here; individual test coverage notes live in test file headers, and task results/gaps live in task cards.
 
-<!-- 说明：命令必须是项目里真实存在的；与「工作流配置」的验证命令保持一致，二者不一致时以本文件为准并同步配置。 -->
+<!-- Note: commands must actually exist in the project and match ai-workflow.yaml; if they differ, this doc is authoritative and config should be synced. -->
 
-默认验证平台：{{例如 Android；iOS 仅在明确要求时}}
+Default Verification Platform: {{e.g. Android; iOS only when explicitly requested}}
 
 ```bash
-{{文档检查命令}}
-{{完整检查命令}}
-{{构建命令}}
+{{docs check command}}
+{{full check command}}
+{{build command}}
 ```
 
-| 档位 | 开发中 | 交付前 |
+| Tier | During Development | Before Delivery |
 | --- | --- | --- |
-| 纯文档 | 核对关联规则与链接 | {{文档检查命令}} |
-| 轻量代码 | 最小复现或受影响测试 | {{定向测试 + 静态分析}} |
-| 标准代码 | 相关测试基线与定向回归 | {{完整检查命令}} |
-| 完整代码 | 按风险选基线 | {{完整检查 + 构建 + 关键链路验收}} |
+| Docs Only | Verify related rules and links | {{docs check command}} |
+| Light | Minimal repro or affected tests | {{targeted tests + static analysis}} |
+| Standard | Related test baseline and targeted regression | {{full check command}} |
+| Full | Risk-based baseline | {{full check + build + critical path acceptance}} |
 
-- 改了代码至少有格式、静态分析、相关测试三项结果；没执行的写明原因，不写成通过。
-- CI：{{CI 配置文件与执行的命令，没有写「无」}}
+- Code changes require formatting, static analysis, and relevant test results; state explicit reasons for anything not run instead of claiming pass.
+- CI: {{CI config file and commands, or "none"}}

@@ -64,6 +64,6 @@ description: 验证与失败处理。跑测试/分析/构建前选择检查范�
 
 ## 受阻交接
 
-小任务写在会话或 Issue；完整档在对应变更目录的交接快照或 Issue 维护一份。模板：`${CLAUDE_PLUGIN_ROOT}/templates/blocked.md`。
+小任务写在会话或 Issue；完整档在对应变更目录的交接快照或 Issue 维护一份。模板：`${CLAUDE_PLUGIN_ROOT}/templates/blocked.md`（中文项目用 `${CLAUDE_PLUGIN_ROOT}/templates/zh/blocked.md`）。
 
 恢复时重新检查 Git 状态、相关规格和环境，验证恢复条件，重跑原失败命令，再继续依赖任务。状态解除依据实际结果，不依据“已有人处理”的口头结论。
