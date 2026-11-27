@@ -24,7 +24,43 @@ READ_TOOLS = {
 }
 SHELL_TOOLS = {"Bash", "shell", "exec_command", "run_shell_command", "Shell"}
 PLANNING_EDIT_TOOLS = {"Write", "Edit", "MultiEdit", "StrReplace", "apply_patch"}
-EDIT_TOOLS = {"Edit", "Write", "MultiEdit", "NotebookEdit", "StrReplace", "EditNotebook", "apply_patch"}
+EDIT_TOOLS = {
+    "Edit", "Write", "MultiEdit", "NotebookEdit", "StrReplace",
+    "EditNotebook", "apply_patch", "Delete",
+    "WriteFile", "EditFile", "DeleteFile", "CreateFile", "MoveFile", "RenameFile",
+    "write_file", "edit_file", "delete_file", "create_file", "move_file", "rename_file",
+    "replace_file_content", "multi_replace_file_content",
+}
+DELEGATION_TOOLS = {"Task"}
+LOCAL_WRITE_ACTIONS = {
+    "write_file", "edit_file", "patch_file", "apply_patch", "apply_diff",
+    "create_file", "delete_file", "remove_file", "move_file", "rename_file",
+    "append_file", "save_file", "update_file", "modify_file", "replace_file",
+    "replace_in_file", "str_replace", "multi_edit", "write_to_file",
+    "edit_notebook", "notebook_edit", "create_directory", "make_directory",
+    "mkdir", "delete_directory", "remove_directory", "replace_symbol_body",
+    "insert_after_symbol", "insert_before_symbol", "rename_symbol",
+    "write_memory", "delete_memory", "edit_memory", "run_command",
+    "exec_command", "execute_command", "run_shell", "run_shell_command",
+    "execute_shell", "shell_exec", "terminal_exec", "bash", "shell",
+}
+LOCAL_REPO_MCP_SERVERS = {
+    "filesystem", "fs", "local_fs", "local-fs", "file", "files",
+    "workspace", "repo", "git", "serena", "ide", "editor",
+    "desktop_commander", "desktop-commander", "shell", "terminal", "bash",
+}
+WRITE_VERBS = {
+    "write", "edit", "delete", "remove", "create", "move", "rename",
+    "patch", "replace", "insert", "append", "update", "save", "apply",
+    "mkdir", "rmdir", "chmod", "chown", "commit", "checkout", "reset",
+    "revert", "stash", "merge", "rebase", "exec", "run", "shell", "eval",
+    "export", "download",
+}
+OUTPUT_PATH_KEYS = ("output_file", "output_path", "save_path", "dest_path", "destination", "dest")
+LOCAL_PATH_KEYS = (
+    "file_path", "path", "target_file", "notebook_path", "target_notebook",
+    "relative_path", "filepath", *OUTPUT_PATH_KEYS,
+)
 TIER_LABELS = {"轻量档": "light", "标准档": "standard", "完整档": "full"}
 TIER_LABELS_EN = {
     "light": "light",
@@ -80,90 +116,362 @@ def project_root(cwd, session_id=None):
     return None
 
 
-def readonly_segments(command):
-    """只拆分引号外的 &&；每段仍走严格解析，拒绝其他控制流和空段。"""
-    if not isinstance(command, str):
+DANGEROUS_SHELL_ENV_VARS = {
+    "GIT_EXTERNAL_DIFF", "GIT_SSH_COMMAND", "GIT_CONFIG_PARAMETERS", "GIT_CONFIG_COUNT",
+    "GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "LD_PRELOAD", "DYLD_INSERT_LIBRARIES",
+    "BASH_ENV", "ENV", "PROMPT_COMMAND", "PYTHONSTARTUP", "NODE_OPTIONS", "PERL5OPT", "RUBYOPT",
+}
+MUTATING_SHELL_COMMANDS = {
+    "touch", "mkdir", "rmdir", "rm", "unlink", "mv", "cp", "install", "ln",
+    "chmod", "chown", "chgrp", "truncate", "dd", "tee", "patch", "shred",
+    "mktemp", "sponge", "rsync", "scp", "tar", "unzip", "zip", "gzip",
+    "gunzip", "bzip2", "bunzip2", "xz", "unxz", "7z", "ar", "cpio", "split",
+    "csplit", "ed", "ex", "vi", "vim", "nvim", "nano", "emacs", "code", "subl",
+    "xargs", "sqlite3",
+}
+SHELL_WRAPPER_COMMANDS = {
+    "sh", "bash", "zsh", "dash", "fish", "csh", "tcsh", "ksh", "eval", "exec",
+    "source", ".", "sudo", "su", "doas", "env", "nohup", "timeout", "watch",
+    "script", "chroot", "caffeinate",
+}
+INTERPRETER_COMMANDS = {
+    "python", "python3", "python2", "pypy", "pypy3", "node", "nodejs", "deno",
+    "bun", "ruby", "perl", "php", "lua", "Rscript", "julia", "osascript",
+    "swift", "go", "rustc", "javac", "java", "kotlin", "dotnet", "elixir",
+    "erl", "tclsh", "pwsh", "powershell",
+}
+BUILD_AND_FORMAT_COMMANDS = {
+    "npm", "npx", "pnpm", "yarn", "bunx", "pip", "pip3", "pipx", "uv",
+    "poetry", "pdm", "pipenv", "conda", "mamba", "cargo", "gem", "bundle",
+    "bundler", "composer", "mvn", "gradle", "gradlew", "make", "cmake",
+    "ninja", "meson", "bazel", "buck", "ant", "rake", "just", "task",
+    "pre-commit", "prettier", "eslint", "black", "isort", "ruff", "flake8",
+    "gofmt", "rustfmt", "clang-format", "dart", "flutter", "pod", "xcodebuild",
+    "fastlane", "terraform", "ansible", "docker", "podman", "helm", "brew",
+    "apt", "apt-get", "yum", "dnf", "pacman", "apk", "nix",
+}
+GIT_READONLY_SUBCOMMANDS = {
+    "status", "diff", "log", "show", "ls-files", "rev-parse", "rev-list",
+    "merge-base", "describe", "blame", "shortlog", "ls-tree", "cat-file",
+    "for-each-ref", "show-ref", "name-rev", "grep",
+}
+GIT_FORBIDDEN_FLAG_PREFIXES = (
+    "--output", "--ext-diff", "--textconv", "--exec", "--config",
+    "--upload-pack", "--open-files-in-pager", "--paginate",
+)
+GIT_BRANCH_MUTATING_FLAGS = {
+    "-d", "-D", "-m", "-M", "-c", "-C", "-f", "-u",
+    "--delete", "--move", "--copy", "--force",
+    "--set-upstream-to", "--unset-upstream", "--edit-description",
+}
+GIT_BRANCH_READ_FLAGS = {"-a", "--all", "-r", "--remotes", "-v", "-vv", "--verbose", "--list", "-l", "--show-current"}
+GIT_CONFIG_WRITE_FLAGS = {"--unset", "--unset-all", "--add", "--replace-all", "--remove-section", "--rename-section", "-e", "--edit"}
+GIT_CONFIG_READ_FLAGS = {"--get", "--get-all", "--list", "-l"}
+STDOUT_FORMAT_VALUES = {
+    "-", "/dev/null", "json", "yaml", "yml", "toml", "xml", "csv", "tsv",
+    "table", "text", "txt", "plain", "wide", "name", "markdown", "md",
+    "raw", "compact", "pretty", "ndjson", "jsonl",
+}
+SAFE_REDIR_RE = re.compile(r"^(?:[012]?)(?:>&[12])(?=$|\s)")
+NULL_REDIR_RE = re.compile(r"^(?:[012]?|&)(?:>>?)\s*/dev/null(?=$|\s)")
+
+
+def split_shell_chain(command):
+    """拆分引号外的 && / || / ; / |；拒绝后台执行、命令替换、子 shell、heredoc 与空段。"""
+    if not isinstance(command, str) or not command.strip():
         return None
     quote, escaped, start = None, False, 0
-    segments = []
+    segments, operators = [], []
     index = 0
-    while index < len(command):
+    length = len(command)
+    while index < length:
         char = command[index]
         if escaped:
             escaped = False
-        elif char == "\\" and quote != "'":
+            index += 1
+            continue
+        if char == "\\" and quote != "'":
             escaped = True
-        elif char in {"'", '"'}:
+            index += 1
+            continue
+        if char in {"'", '"'}:
             if quote is None:
                 quote = char
             elif quote == char:
                 quote = None
-        elif quote is None and command[index:index + 2] == "&&":
-            segments.append(command[start:index])
             index += 1
-            start = index + 1
+            continue
+        if char == "\x00" or (quote is None and char in "\n\r"):
+            return None
+        if quote != "'" and (char == "`" or command[index:index + 2] == "$("):
+            return None
+        if quote is None:
+            pair = command[index:index + 2]
+            if pair in {"<<", "<>", "<(", ">("}:
+                return None
+            if char in {"(", ")"}:
+                return None
+            if pair in {"&&", "||"}:
+                segments.append(command[start:index])
+                operators.append(pair)
+                index += 2
+                start = index
+                continue
+            if char == ";" or (char == "|" and (index == 0 or command[index - 1] != ">")):
+                if pair == "|&":
+                    return None
+                segments.append(command[start:index])
+                operators.append(char)
+                index += 1
+                start = index
+                continue
+            if char == "&":
+                prev_redir = index > 0 and command[index - 1] in "><"
+                if pair != "&>" and not prev_redir:
+                    return None
         index += 1
+    if quote is not None or escaped:
+        return None
     segments.append(command[start:])
-    return segments if all(shell_tokens(part) for part in segments) else None
+    if any(not part.strip() for part in segments):
+        return None
+    return segments, operators
+
+
+def readonly_segments(command):
+    """返回拆分后的命令段列表，供只读链与 git 安全参数重写复用。"""
+    parsed = split_shell_chain(command)
+    return parsed[0] if parsed else None
+
+
+def _strip_safe_redirections(segment):
+    """剥离仅指向读入(<)、标准流复制(2>&1)或 /dev/null 的重定向；任何其他输出重定向一律拒绝。"""
+    if not isinstance(segment, str):
+        return None
+    cleaned = []
+    quote, escaped = None, False
+    index, length = 0, len(segment)
+    while index < length:
+        char = segment[index]
+        if escaped:
+            cleaned.append(char)
+            escaped = False
+            index += 1
+            continue
+        if char == "\\" and quote != "'":
+            cleaned.append(char)
+            escaped = True
+            index += 1
+            continue
+        if char in {"'", '"'}:
+            cleaned.append(char)
+            if quote is None:
+                quote = char
+            elif quote == char:
+                quote = None
+            index += 1
+            continue
+        if quote is None:
+            if char == "<":
+                if not segment[index + 1:].strip():
+                    return None
+                cleaned.append(" ")
+                index += 1
+                continue
+            # 检查带可选 fd 前缀 (0/1/2) 或 & 的输出重定向。
+            redir_start = index
+            if char in "012" and index + 1 < length and segment[index + 1] == ">" and (index == 0 or segment[index - 1].isspace()):
+                pass
+            elif char == "&" and index + 1 < length and segment[index + 1] == ">":
+                pass
+            elif char == ">":
+                pass
+            else:
+                cleaned.append(char)
+                index += 1
+                continue
+            tail = segment[redir_start:]
+            match = SAFE_REDIR_RE.match(tail) or NULL_REDIR_RE.match(tail)
+            if not match:
+                return None
+            cleaned.append(" ")
+            index = redir_start + match.end()
+            continue
+        cleaned.append(char)
+        index += 1
+    try:
+        args = shlex.split("".join(cleaned))
+    except ValueError:
+        return None
+    if not args or args[0] in {"{", "}"} or "$" in args[0]:
+        return None
+    return args
 
 
 def safe_shell_input(event):
     """对每段 Git 调查禁用外部 diff/textconv，保留宿主原输入字段。"""
     data = event.get("tool_input") or {}
-    segments = readonly_segments(shell_command(data))
-    if not segments:
+    parsed = split_shell_chain(shell_command(data))
+    if not parsed:
         return None
-    # 组合只开放纯只读查询；不能借此串联规划登记或引擎修改。
+    segments, operators = parsed
+    # 组合只开放非本地写入查询；不能借此串联规划登记或引擎修改。
     if len(segments) > 1 and not all(readonly_single(part) for part in segments):
         return None
     commands, changed = [], False
     for part in segments:
         args = shell_tokens(part)
-        index = 2 if args[:2] == ["git", "--no-pager"] else 1
-        if args[0] == "git" and len(args) > index and args[index] in {"diff", "log", "show"}:
-            if any(a.startswith(("--ext-diff", "--textconv", "--output")) for a in args):
-                return None
-            args[index + 1:index + 1] = ["--no-ext-diff", "--no-textconv"]
-            changed = True
-        commands.append(shlex.join(args))
+        if args:
+            index = 2 if args[:2] == ["git", "--no-pager"] else 1
+            if args[0] == "git" and len(args) > index and args[index] in {"diff", "log", "show"}:
+                if any(a.startswith(("--ext-diff", "--textconv", "--output")) for a in args):
+                    return None
+                args[index + 1:index + 1] = ["--no-ext-diff", "--no-textconv"]
+                changed = True
+                commands.append(shlex.join(args))
+                continue
+        commands.append(part.strip())
     if not changed:
         return None
     result = dict(data)
     key = "command" if "command" in data else "cmd"
     original = data.get(key)
-    normalized = " && ".join(commands)
-    result[key] = [*original[:2], normalized] if isinstance(original, list) else normalized
+    rebuilt = commands[0]
+    for op, cmd in zip(operators, commands[1:]):
+        rebuilt += f" {op} {cmd}"
+    result[key] = [*original[:2], rebuilt] if isinstance(original, list) else rebuilt
     return result
 
 
 def readonly_shell(command):
-    """组合中的全部命令必须独立只读，不因首段合法就开放后续写入。"""
+    """组合中的全部命令必须独立满足不修改本地仓库，不因首段合法就开放后续写入。"""
     segments = readonly_segments(command)
     return bool(segments) and all(readonly_single(part) for part in segments)
 
 
+def _git_readonly(args):
+    rest = list(args[1:])
+    if rest and rest[0] == "--no-pager":
+        rest.pop(0)
+    if not rest:
+        return False
+    if any(a.startswith(GIT_FORBIDDEN_FLAG_PREFIXES) for a in rest):
+        return False
+    sub = rest[0]
+    tail = rest[1:]
+    if sub == "remote":
+        if tail in ([], ["-v"], ["--verbose"]):
+            return True
+        return len(tail) == 2 and tail[0] == "get-url" and not tail[1].startswith("-")
+    if sub == "symbolic-ref":
+        if tail and tail[0] == "--short":
+            tail = tail[1:]
+        return len(tail) == 1 and not tail[0].startswith("-")
+    if sub == "branch":
+        if any(a in GIT_BRANCH_MUTATING_FLAGS for a in tail):
+            return False
+        positionals = [a for a in tail if not a.startswith("-")]
+        return not positionals or any(a in GIT_BRANCH_READ_FLAGS or a.startswith(("--contains", "--merged", "--no-merged")) for a in tail)
+    if sub == "tag":
+        return not tail or (tail[0] in {"-l", "--list"} and not any(a in {"-d", "--delete", "-a", "-s", "-f", "--force"} for a in tail))
+    if sub == "stash":
+        return bool(tail) and tail[0] in {"list", "show"}
+    if sub == "config":
+        if any(a in GIT_CONFIG_WRITE_FLAGS for a in tail):
+            return False
+        return any(a in GIT_CONFIG_READ_FLAGS for a in tail)
+    return sub in GIT_READONLY_SUBCOMMANDS
+
+
+def _has_unsafe_output_flag(args):
+    """拒绝指向本地文件的 -o / --output / --out / --out-file 等参数，保留 stdout 格式参数。"""
+    index = 0
+    while index < len(args):
+        arg = args[index]
+        if arg in {"--in-place", "--write"}:
+            return True
+        if arg.startswith(("--files0-from", "--out-file", "--output-file", "--out-dir", "--output-dir", "--save-to")):
+            return True
+        if arg in {"-o", "--output", "--out"}:
+            val = args[index + 1] if index + 1 < len(args) else ""
+            if val.lower() not in STDOUT_FORMAT_VALUES:
+                return True
+            index += 2
+            continue
+        if arg.startswith(("--output=", "--out=")):
+            val = arg.split("=", 1)[1]
+            if val.lower() not in STDOUT_FORMAT_VALUES:
+                return True
+        elif arg.startswith("-o") and len(arg) > 2:
+            val = arg[2:]
+            if val.lower() not in STDOUT_FORMAT_VALUES:
+                return True
+        index += 1
+    return False
+
+
 def readonly_single(command):
-    """有限调查命令白名单；拒绝重定向、子命令和隐式执行。"""
-    args = shell_tokens(command)
+    """放行不修改本地仓库的外部 CLI 与只读调查；拦截本地文件写入、解释器执行及仓库脚本。"""
+    args = _strip_safe_redirections(command)
     if not args:
         return False
-    if args[0] == "git" and len(args) > 1 and args[1] == "--no-pager":
-        args.pop(1)
-    if args[0] == "git":
-        if args[1:] in (["remote", "-v"], ["remote", "--verbose"], ["remote"]):
+    while args and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=.*", args[0]):
+        key = args[0].split("=", 1)[0]
+        if key in DANGEROUS_SHELL_ENV_VARS:
+            return False
+        args.pop(0)
+    if not args:
+        return False
+    cmd_raw = args[0]
+    cmd = Path(cmd_raw).name
+    if "/" in cmd_raw and not cmd_raw.startswith(("/usr/", "/bin/", "/opt/", "/sbin/", "/Library/", "/System/")):
+        return False
+    if cmd in MUTATING_SHELL_COMMANDS or cmd in SHELL_WRAPPER_COMMANDS:
+        return False
+    if cmd in INTERPRETER_COMMANDS:
+        if cmd == "go" and len(args) >= 2 and args[1] == "env" and not any("=" in a for a in args[2:]):
             return True
-        if len(args) >= 3 and args[1] == "symbolic-ref":
-            rest = args[2:]
-            if rest[0] == "--short":
-                rest = rest[1:]
-            return len(rest) == 1 and not rest[0].startswith("-")
-        return len(args) >= 2 and args[1] in {"status", "diff", "log", "show", "ls-files", "rev-parse"} and all(
-            not a.startswith(("--output", "--ext-diff", "--textconv", "--exec", "--config", "--upload-pack", "--open-files-in-pager", "--paginate")) for a in args[2:])
-    if args[0] in {"pwd", "ls", "cat", "head", "tail", "wc", "stat"}:
-        return not any(a.startswith(("--files0-from", "--output")) for a in args[1:])
-    if args[0] == "rg":
+        return args[1:] in (["--version"], ["-V"], ["-v"], ["--help"], ["-h"], ["version"])
+    if cmd in BUILD_AND_FORMAT_COMMANDS:
+        if args[1:] in (["--version"], ["-V"], ["-v"], ["--help"], ["-h"], ["version"], ["doctor"], ["devices"]):
+            return True
+        return len(args) >= 2 and args[1] in {"--help", "-h", "--version", "-v", "-V", "help"} and not _has_unsafe_output_flag(args[1:])
+    if cmd == "git":
+        return _git_readonly(args)
+    if cmd == "rg":
         return not any(a.startswith(("--pre", "--hostname-bin", "--search-zip", "--open-files-in-pager")) or a.startswith("-z") for a in args[1:])
-    return False
+    if cmd == "find":
+        return not any(a in {"-delete", "-exec", "-execdir", "-ok", "-okdir", "-fprint", "-fprint0", "-fprintf", "-fls"} for a in args[1:])
+    if cmd in {"sed", "gsed"}:
+        for arg in args[1:]:
+            if arg == "--in-place" or arg.startswith("--in-place="):
+                return False
+            if arg.startswith("-") and not arg.startswith("--") and "i" in arg[1:]:
+                return False
+        return True
+    if cmd in {"awk", "gawk", "mawk"}:
+        for arg in args[1:]:
+            if arg in {"-i", "--include"} or arg.startswith(("-i", "--include=")):
+                return False
+            if ">" in arg or "system(" in arg or "|" in arg:
+                return False
+        return True
+    if cmd == "sort":
+        return not any(a == "-o" or a.startswith(("-o", "--output")) for a in args[1:])
+    if cmd in {"pwd", "ls", "cat", "head", "tail", "wc", "stat"}:
+        return not any(a.startswith(("--files0-from", "--output")) for a in args[1:])
+    if cmd == "curl":
+        for arg in args[1:]:
+            if arg in {"-o", "-O", "-J", "--remote-name", "--remote-header-name", "-D", "-c"}:
+                return False
+            if arg.startswith(("-o", "-O", "-D", "-c", "--output", "--remote-name", "--dump-header", "--cookie-jar", "--trace")):
+                return False
+        return True
+    if cmd == "wget":
+        if args[1:] in (["--version"], ["-V"], ["--help"], ["-h"]):
+            return True
+        return "--spider" in args[1:] or args[1:3] == ["-O", "-"] or "--output-document=-" in args[1:]
+    return not _has_unsafe_output_flag(args[1:])
 
 
 def engine_command(command):
@@ -271,7 +579,7 @@ def planning_command(command, event):
         return False
     if action != "open":
         return set(values) == {"--root", "--session"}
-    return (values.get("--operation") in (["init"], ["prd-breakdown"]) and bool(values.get("--path")) and
+    return (values.get("--operation") in (["init"], ["prd-breakdown"], ["clarify"]) and bool(values.get("--path")) and
             ("--ttl" not in values or values["--ttl"][0].isdigit() and 1 <= int(values["--ttl"][0]) <= 3600) and
             ("--config-json" not in values or values["--operation"] == ["init"]))
 
@@ -296,7 +604,7 @@ def init_read_command(command, event):
         except (ValueError, TypeError):
             return False
     remaining = fixed_command(command, "check_docs.py")
-    if remaining is None or remaining.count("--check-config") != 1:
+    if remaining is None or remaining.count("--check-config") > 1:
         return False
     remaining = [a for a in remaining if a != "--check-config"]
     return len(remaining) == 2 and remaining[0] == "--root" and same_root(remaining[1])
@@ -1081,21 +1389,116 @@ def load_task(root):
     return Engine(root, default_db(root)).status(task_id)
 
 
-def targets(event, root):
-    """从受支持编辑工具提取真实目标；不明确的写入按整个任务范围检查。"""
+def _to_snake(name):
+    return re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", name).replace("-", "_").lower()
+
+
+def _local_repo_path(root, value):
+    """仅当字符串是项目根内路径时返回相对路径；URL 与外部绝对路径返回 None。"""
+    if not isinstance(value, str) or not value.strip():
+        return None
+    if value.lower().startswith(("http://", "https://", "ws://", "wss://")):
+        return None
+    from workflow_planning_cli import safe_path
+    try:
+        return safe_path(root, value)
+    except (ValueError, TypeError):
+        return None
+
+
+def _references_state_dir(value):
+    if not isinstance(value, str):
+        return False
+    normalized = value.strip().replace("\\", "/")
+    return (
+        normalized == ".speclock"
+        or normalized.startswith(".speclock/")
+        or "/.speclock/" in normalized
+        or normalized.endswith("/.speclock")
+    )
+
+
+def _tool_server_and_action(tool_name):
+    if not isinstance(tool_name, str):
+        return "", "", set()
+    if tool_name.startswith("mcp__"):
+        parts = tool_name.split("__", 2)
+        server = parts[1].lower() if len(parts) > 1 else ""
+        action = _to_snake(parts[2] if len(parts) > 2 else parts[1])
+    elif tool_name.startswith("MCP:"):
+        parts = tool_name.split(":", 2)
+        server = parts[1].lower() if len(parts) > 1 else ""
+        action = _to_snake(parts[2] if len(parts) > 2 else parts[1])
+    elif "." in tool_name or "/" in tool_name:
+        sep = "." if "." in tool_name else "/"
+        server, raw_action = tool_name.split(sep, 1)
+        server = server.lower()
+        action = _to_snake(raw_action)
+    else:
+        server = ""
+        action = _to_snake(tool_name)
+    tokens = {tok for tok in action.split("_") if tok}
+    return server, action, tokens
+
+
+def is_local_repo_write_tool(event, root):
+    """判断非 READ_TOOLS / 非 SHELL_TOOLS 的工具是否可能写入本地仓库。"""
+    tool = event.get("tool_name")
+    if tool in EDIT_TOOLS or tool in DELEGATION_TOOLS:
+        return True
     data = event.get("tool_input") or {}
-    values = []
-    for key in ("file_path", "path", "target_file", "notebook_path", "target_notebook"):
-        if data.get(key):
-            values.append(data[key])
-    if event.get("tool_name") == "apply_patch":
-        text = data.get("command") or data.get("patch") or data.get("input") or ""
-        values.extend(re.findall(r"^\*\*\* (?:Update File|Add File|Delete File|Move to): (.+)$", text, re.M))
+    from workflow_engine.state_dir import is_state_relpath
+    for key in LOCAL_PATH_KEYS:
+        value = data.get(key)
+        if not isinstance(value, str) or not value.strip():
+            continue
+        if _references_state_dir(value):
+            return True
+        rel = _local_repo_path(root, value)
+        if rel is not None and is_state_relpath(rel):
+            return True
+    for key in OUTPUT_PATH_KEYS:
+        if _local_repo_path(root, data.get(key)) is not None:
+            return True
+    server, action, tokens = _tool_server_and_action(tool)
+    if action in LOCAL_WRITE_ACTIONS:
+        return True
+    if server in LOCAL_REPO_MCP_SERVERS and (tokens & WRITE_VERBS):
+        return True
+    if tokens & WRITE_VERBS:
+        for key in LOCAL_PATH_KEYS:
+            if _local_repo_path(root, data.get(key)) is not None:
+                return True
+    return False
+
+
+def targets(event, root):
+    """从受支持编辑工具或本地写入 MCP 提取真实目标；不明确的写入按整个任务范围检查。"""
+    tool = event.get("tool_name")
+    data = event.get("tool_input") or {}
+    from workflow_planning_cli import safe_path
+    if tool in EDIT_TOOLS:
+        values = []
+        for key in ("file_path", "path", "target_file", "notebook_path", "target_notebook"):
+            if data.get(key):
+                values.append(data[key])
+        if tool == "apply_patch":
+            text = data.get("command") or data.get("patch") or data.get("input") or ""
+            values.extend(re.findall(r"^\*\*\* (?:Update File|Add File|Delete File|Move to): (.+)$", text, re.M))
+        return [safe_path(root, value) for value in values]
     result = []
-    for value in values:
-        # 规范化前保留并拒绝穿越与链接，不能把越界路径伪装为已登记目标。
-        from workflow_planning_cli import safe_path
-        result.append(safe_path(root, value))
+    for key in LOCAL_PATH_KEYS:
+        value = data.get(key)
+        if not isinstance(value, str) or not value.strip():
+            continue
+        if _references_state_dir(value):
+            result.append(".speclock")
+            continue
+        rel = _local_repo_path(root, value)
+        if rel is not None:
+            result.append(rel)
+        elif not Path(value).is_absolute() and not value.lower().startswith(("http://", "https://", "ws://", "wss://")):
+            result.append(safe_path(root, value))
     return result
 
 
@@ -1136,7 +1539,13 @@ def pre_tool(event):
     if tool in READ_TOOLS or tool in set(filter(None, os.environ.get("WORKFLOW_READONLY_MCP_TOOLS", "").split(","))):
         return None
     data = event.get("tool_input") or {}
-    if tool in SHELL_TOOLS and (readonly_shell(shell_command(data)) or engine_command(shell_command(data)) or dashboard_command(shell_command(data)) or archive_command(shell_command(data), event) or planning_command(shell_command(data), event) or init_read_command(shell_command(data), event) or vendor_check_docs_command(shell_command(data), event)):
+    if tool in SHELL_TOOLS:
+        command = shell_command(data)
+        if (readonly_shell(command) or engine_command(command) or dashboard_command(command) or
+                archive_command(command, event) or planning_command(command, event) or
+                init_read_command(command, event) or vendor_check_docs_command(command, event)):
+            return None
+    elif not is_local_repo_write_tool(event, root):
         return None
     try:
         paths = targets(event, root)
@@ -1273,7 +1682,7 @@ def _context_body(event, root):
         return message
     except Exception as exc:
         if "ENGINE_TASK_UNBOUND" in str(exc):
-            return "ENGINE_TASK_UNBOUND：只读调查无需任务；可调用 init / prd-breakdown 登记规划，或 dashboard 管理服务；产品实施须由 Agent 先 CLI list --active 查已有任务并 bind-executor，或用 prepare 建卡绑会话（可加 --request-tier 发起定档）并满足实施门槛，不要让用户外部手动绑定。"
+            return "ENGINE_TASK_UNBOUND：只读调查无需任务；可调用 init / prd-breakdown / clarify 登记规划，或 dashboard 管理服务；产品实施须由 Agent 先 CLI list --active 查已有任务并 bind-executor，或用 prepare 建卡绑会话（可加 --request-tier 发起定档）并满足实施门槛，不要让用户外部手动绑定。"
         return str(exc) + "；请核对任务状态及绑定，规划使用独立 planning 入口。"
 
 

@@ -7,7 +7,7 @@
     {
       "name": "workflow-core",
       "source": "./plugins/workflow-core",
-      "description": "任务级工作流：人工授权、共享引擎门禁、只读看板与执行观测"
+      "description": "任务级工作流：需求澄清、人工授权、共享引擎门禁、只读看板与执行观测"
     }
   ]
 }

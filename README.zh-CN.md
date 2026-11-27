@@ -1,6 +1,6 @@
 # SpecLock
 
-[English](README.md) | **简体中文** · [完整演示 (YouTube)](https://youtu.be/ZKFB6Ni0aZ4) · [v0.29.0](docs/development/release-0.29.0.md)
+[English](README.md) | **简体中文** · [完整演示 (YouTube)](https://youtu.be/ZKFB6Ni0aZ4) · [v0.30.0](docs/development/release-0.30.0.md)
 
 **AI 说「测试过了」还不够。SpecLock 要看到验证结果，才允许评审。**
 
@@ -39,6 +39,8 @@ SpecLock 是面向 **Codex、Claude Code 和 Cursor** 的 AI 开发工作流插�
 
 5. 按提示选**完整档**，看过方案后再批准。规定检查和评审通过后，任务卡会变成 **「评审通过，待人工验收」**，不会自动勾完成。
 
+> 想先体验「待确认」任务卡的需求澄清？在同一示例目录发送 `$workflow-core:clarify AUTH-R04`，即可对带有未决问题的卡片做 `grill-me` 式逐枝访谈并回写结论。
+
 <details>
 <summary>观看完整端到端演示（YouTube）</summary>
 
@@ -51,6 +53,7 @@ SpecLock 是面向 **Codex、Claude Code 和 Cursor** 的 AI 开发工作流插�
 | 阶段 | 做了什么 |
 | --- | --- |
 | **1. PRD 拆解（按需）** | [`prd-breakdown`](plugins/workflow-core/skills/prd-breakdown/SKILL.md) 把需求文档拆成可独立验收的子任务，记到仓库任务卡，保留需求来源、依赖和验收条件。已有任务号或明确的小改动，可以直接进入开工确认，不必先写 PRD。 |
+| **1.5 需求澄清（待确认按需）** | 面对状态为「待确认」、含未决待确认项或范围/验收模糊的任务卡，[`clarify`](plugins/workflow-core/skills/clarify/SKILL.md) 先在代码与文档中自查事实，再以 `grill-me` 式决策树逐枝访谈追问并给出推荐答案，收敛共识后回写任务卡与产品文档。 |
 | **2. 确认后开工** | Agent 定位任务、检查当前工作区，生成必读基线与检查清单。你确认范围和档位；完整档还要单独审阅并批准方案。适用规范必须读全并登记回执，缺读或截断不能开工。 |
 | **3. 分档实施** | **轻量**按待办做最小改动；**标准**在任务卡或 Issue 写 3～5 步短计划，中途跑失败用例与定向回归；**完整**将已批准的提案和设计写入 `proposal.md`、`design.md`，再按待办顺序实施。三档都记录步骤进度，优先先写失败测试；不采用时记录原因和替代验证。 |
 | **4. 验证** | 按 `ai-workflow.yaml` 的 `verify` 配置实际运行规定检查：文档规范、代码格式、静态分析、相关测试，以及配置要求的构建或端到端测试。留存命令、退出码和工作区快照；检查没跑、失败或证据失效，都不能进评审。 |
@@ -111,7 +114,7 @@ claude plugin install workflow-core@speclock
 ## 在自己的项目中使用
 
 1. 每个项目先跑一次 `workflow-core:init`（Codex：`$workflow-core:init`；Claude Code：`/workflow-core:init`），核对生成的配置、必读规范和检查命令。
-2. 用 `workflow-core:workflow` 给出任务号或描述需求。有完整 PRD，再先用 [`prd-breakdown`](plugins/workflow-core/skills/prd-breakdown/SKILL.md) 拆成任务卡。
+2. 用 `workflow-core:workflow` 给出任务号或描述需求。有完整 PRD，再先用 [`prd-breakdown`](plugins/workflow-core/skills/prd-breakdown/SKILL.md) 拆成任务卡；若卡片仍处于「待确认」或需求边界不清，可先用 [`clarify`](plugins/workflow-core/skills/clarify/SKILL.md)（`workflow-core:clarify`）逐枝访谈澄清并回写结论。
 3. 换会话时发任务号，有[交接记录](plugins/workflow-core/skills/handoff/SKILL.md)就一并给出。
 
 ## 可选插件
@@ -123,4 +126,4 @@ claude plugin install workflow-core@speclock
 
 - **流程与恢复：**[工作流技能](plugins/workflow-core/skills/workflow/SKILL.md#任务路径) · [验证失败怎么处理](plugins/workflow-core/skills/verify/SKILL.md#失败处理顺序) · [引擎协议与 CLI](docs/development/workflow-engine.md#cli-示例)
 - **项目工具：**[看板](plugins/workflow-core/skills/dashboard/SKILL.md) · [流程度量](plugins/workflow-core/skills/metrics/SKILL.md) · [独立文档检查脚本](plugins/workflow-core/scripts/vendor_check_docs.py)
-- **参与项目：**[Issues](https://github.com/lvzhiyi/speclock/issues) · [版本说明](docs/development/release-0.29.0.md) · [MIT 许可证](LICENSE)
+- **参与项目：**[Issues](https://github.com/lvzhiyi/speclock/issues) · [版本说明](docs/development/release-0.30.0.md) · [MIT 许可证](LICENSE)

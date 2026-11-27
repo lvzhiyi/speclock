@@ -42,9 +42,56 @@ class HostGateTests(unittest.TestCase):
                     self.assertIsNone(host_gate.pre_tool(self.event(tool, duration_ms=30000)))
 
     def test_arbitrary_shell_and_mcp_are_writes(self):
-        for tool, data in [("Bash", {"command": "python3 -c 'open(\"x\",\"w\")'"}), ("Bash", {"command": "git status; touch x"}), ("mcp__service__update", {})]:
-            with self.subTest(tool=tool), patch.object(host_gate, "load_task", return_value=self.task(missing=["tier_confirmation"])):
+        local_write_cases = [
+            ("Bash", {"command": "python3 -c 'open(\"x\",\"w\")'"}),
+            ("Bash", {"command": "git status; touch x"}),
+            ("Bash", {"command": "apifox export --output docs/api.json"}),
+            ("Bash", {"command": "sed -i '' 's/a/b/' rules.md"}),
+            ("Bash", {"command": "curl -o x https://example.com"}),
+            ("mcp__filesystem__write_file", {"path": "src/a.py"}),
+            ("mcp__serena__replace_symbol_body", {"relative_path": "src/a.py"}),
+            ("mcp__service__update", {"file_path": "src/a.py"}),
+        ]
+        for tool, data in local_write_cases:
+            with self.subTest(tool=tool, data=data), patch.object(host_gate, "load_task", return_value=self.task(missing=["tier_confirmation"])):
                 self.assertIn("tier_confirmation", host_gate.pre_tool(self.event(tool, **data)))
+
+    def test_external_cli_mcp_and_browser_tools_bypass_local_write_gate(self):
+        allowed_shell = (
+            "apifox --help",
+            "apifox --version",
+            "apifox api list --help",
+            "apifox api list -o json",
+            "apifox api list | jq '.data'",
+            "which apifox 2>/dev/null || echo missing",
+            'curl -s -H "Authorization: Bearer $TOKEN" https://example.com',
+            "flutter --version",
+            "flutter doctor",
+            "python3 --version",
+            "find src -name '*.py'",
+            "sed -n '1,10p' rules.md",
+        )
+        allowed_tools = (
+            ("mcp__apifox__get_api", {"path": "/api/v1/courses"}),
+            ("mcp__pixso__get_node_dsl", {"file_key": "abc", "node_id": "1:2"}),
+            ("mcp__playwright__browser_navigate", {"url": "https://apifox.com"}),
+            ("mcp__chrome_devtools__open_page", {"url": "https://apifox.com"}),
+            ("mcp__jira__get_issue", {"key": "LEARN-1"}),
+            ("mcp__service__update", {}),
+            ("mcp__playwright__take_screenshot", {"output_file": "/tmp/shot.png"}),
+        )
+        with patch.object(host_gate, "load_task", side_effect=AssertionError("外部调查与非本地写入工具不应查询或拦截任务")):
+            for shell_tool in ("Bash", "exec_command", "Shell"):
+                for command in allowed_shell:
+                    with self.subTest(tool=shell_tool, command=command):
+                        self.assertIsNone(host_gate.pre_tool(self.event(shell_tool, command=command)))
+            for tool, data in allowed_tools:
+                with self.subTest(tool=tool, data=data):
+                    self.assertIsNone(host_gate.pre_tool(self.event(tool, **data)))
+
+        self.assertIn("ENGINE_STATE_PROTECTED", host_gate.pre_tool(self.event("mcp__custom__tool", file_path=".speclock/state.sqlite")))
+        with patch.object(host_gate, "load_task", side_effect=ValueError("ENGINE_TASK_UNBOUND：未绑定")):
+            self.assertIn("ENGINE_TASK_UNBOUND", host_gate.pre_tool(self.event("mcp__apifox__export", output_file="docs/api.json")))
 
     def test_binding_state_and_baseline_are_required(self):
         (self.root / "rules.md").write_text("规范", encoding="utf-8")
@@ -68,9 +115,24 @@ class HostGateTests(unittest.TestCase):
             self.assertTrue(host_gate.readonly_shell(command), command)
 
     def test_readonly_chains_preserve_quotes_and_reject_unknown_syntax(self):
-        for command in ("pwd && git remote -v", "git symbolic-ref --short refs/remotes/origin/HEAD", "rg 'a && b' src && git --no-pager diff", 'rg "a && b" src && pwd'):
+        for command in (
+            "pwd && git remote -v",
+            "git symbolic-ref --short refs/remotes/origin/HEAD",
+            "rg 'a && b' src && git --no-pager diff",
+            'rg "a && b" src && pwd',
+            "pwd || ls",
+            "pwd | cat",
+            "apifox api list | jq .",
+            "which apifox 2>/dev/null || echo missing",
+        ):
             self.assertTrue(host_gate.readonly_shell(command), command)
-        for command in ("pwd &&", "&& pwd", "pwd && && ls", "pwd & ls", "pwd || ls", "pwd; ls", "pwd | cat", "pwd && cat x > y", "pwd && $(touch x)", "pwd && `touch x`", "pwd && git remote remove origin", "pwd && git symbolic-ref --delete HEAD", "pwd && git symbolic-ref HEAD refs/heads/x", "pwd && git -c alias.x=x status", "pwd && python3 -c pass"):
+        for command in (
+            "pwd &&", "&& pwd", "pwd && && ls", "pwd & ls", "pwd || touch x", "pwd; touch x",
+            "pwd | tee x", "pwd && cat x > y", "pwd && $(touch x)", "pwd && `touch x`",
+            "pwd && git remote remove origin", "pwd && git symbolic-ref --delete HEAD",
+            "pwd && git symbolic-ref HEAD refs/heads/x", "pwd && git -c alias.x=x status",
+            "pwd && python3 -c pass",
+        ):
             self.assertFalse(host_gate.readonly_shell(command), command)
         event = self.event("Shell", cmd=["bash", "-lc", "git diff && git --no-pager show HEAD"], timeout=9)
         updated = host_gate.safe_shell_input(event)
@@ -287,9 +349,11 @@ class HostGateTests(unittest.TestCase):
         command = "python3 " + str(Path(host_gate.__file__).with_name("dashboard_server.py"))
         self.assertTrue(host_gate.dashboard_command(command + " status --root /tmp"))
         self.assertTrue(host_gate.dashboard_command(command + " on"))
-        with patch.dict(os.environ, {"WORKFLOW_READONLY_MCP_TOOLS": "mcp__known__read"}), patch.object(host_gate, "load_task", side_effect=ValueError("unbound")):
-            self.assertIsNone(host_gate.pre_tool(self.event("mcp__known__read")))
-            self.assertIsNotNone(host_gate.pre_tool(self.event("mcp__unknown__read")))
+        with patch.object(host_gate, "load_task", side_effect=ValueError("unbound")):
+            self.assertIsNone(host_gate.pre_tool(self.event("mcp__unknown__read")))
+            self.assertIsNotNone(host_gate.pre_tool(self.event("mcp__filesystem__write_file", path="src/a.py")))
+        with patch.dict(os.environ, {"WORKFLOW_READONLY_MCP_TOOLS": "mcp__filesystem__write_file"}), patch.object(host_gate, "load_task", side_effect=ValueError("unbound")):
+            self.assertIsNone(host_gate.pre_tool(self.event("mcp__filesystem__write_file", path="src/a.py")))
 
     def test_codex_real_shapes_and_quoted_inline_json(self):
         cli = Path(host_gate.__file__).with_name("workflow_engine_cli.py")

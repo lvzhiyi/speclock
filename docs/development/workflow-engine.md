@@ -2,6 +2,8 @@
 
 本文是后续宿主、dashboard 适配契约。引擎强制流程判据，普通插件不提供抗恶意、身份认证或防程序代答保证。人工确认记录 `human_process=true` 只表示流程属性；TTY 和 actor 字符串都不是安全签名。同一系统用户可以修改数据库、检查程序及运行环境。
 
+`PreToolUse` 同步门禁仅守护**本地仓库写入边界**：原生文件编辑工具、写入本地仓库或 `.speclock/` 的 MCP 工具、可能修改本地仓库或执行任意脚本/解释器的 Shell 命令以及 `Task` 子 Agent 委派须通过任务就绪检查（或规划登记）；不写入本地仓库的外部调查工具（如 Pixso/Apifox/浏览器等非本地写入型 MCP 工具与只读外部 CLI 查询/管道）直接放行，避免阻塞定档与方案准备前的契约/设计调研。
+
 ## 权威与兼容
 
 权威层级为任务 → `rounds[]` 执行轮次 → `attempts[]` 阶段尝试 → `evidence[]` 证据。`current_round` 选择活动轮次，当前仅允许一个活动轮次。顶层 `state/phase/results/snapshot/missing` 是兼容投影，不应作为单独可写状态接口。SQLite 任务、事件、请求幂等响应原子提交；所有修改需要整数 CAS `version` 和全局唯一 request。相同 request 不同参数拒绝；v2 重放返回当前只读投影，不返回旧轮次成功。事件 history 保留原时点快照。
@@ -10,17 +12,17 @@ CLI `create --details` 必填且必须为 JSON 对象（包括拒绝 null）；C
 
 ## 任务外的规划与服务管理
 
-`workflow_planning_cli.py open|status|close --root PROJECT --session SESSION` 是固定绝对脚本入口，不要求 `--task`。用户选择 init / prd-breakdown 后由技能显式 open：附 `--operation init|prd-breakdown`、重复 `--path` 精确目标及可选 `--ttl`（默认 1800 秒、最多 3600 秒）。配置文档角色来自 `docs.*`；模块卡只限 cards_dir 直接 Markdown 文件；README 只有明确登记才开放。init 可通过 `--config-json` 内联已确认的配置草稿自举有限配置与骨架目标，不因缺配置文件死锁。
+`workflow_planning_cli.py open|status|close --root PROJECT --session SESSION` 是固定绝对脚本入口，不要求 `--task`。用户选择 init / prd-breakdown / clarify 后由技能显式 open：附 `--operation init|prd-breakdown|clarify`、重复 `--path` 精确目标及可选 `--ttl`（默认 1800 秒、最多 3600 秒）。配置文档角色来自 `docs.*`；模块卡只限 cards_dir 直接 Markdown 文件；README 只有明确登记才开放。init 可通过 `--config-json` 内联已确认的配置草稿自举有限配置与骨架目标，不因缺配置文件死锁。
 
 状态和开闭 JSONL 审计保存在状态目录（默认项目内 `.speclock/`），以项目、真实宿主 session、操作、精确路径及有效期约束。原生 Write / Edit / apply_patch 的全部目标命中才放行；路径穿越、符号链接、伪扩展、Shell 文件写入、MCP 混写及模板/产品代码不在例外内。结束、取消和交接前 close，过期或关闭后恢复原实施门槛。旧 WORKFLOW_PLAN_PATHS 环境例外不再生效。技能调用不是可靠身份认证，宿主也不能自动观察 Skill 后声称用户已批准实施。
 
-看板固定脚本只接受明确 on / off / status 与不重复的 --root / --task 键值，不需要实施任务；三宿主固定 WORKFLOW_HOST 前缀均支持。动作可放在白名单键值之前或之后，标量选项重复仍拒绝。无 action、serve、其他参数、任意脚本和 shell 拼接不属于免任务命令。init 的固定 detect.sh、git check-ignore -v 与固定 check_docs.py --root PROJECT --check-config 独立只读放行，不要求实施任务。固定 `vendor_check_docs.py --check <项目内路径>` 独立只读放行；`--output scripts/check_docs.py` 仅在当前会话持有活跃 `init` 规划登记时放行，拒绝 `--force`、符号链接、路径穿越与插件源码目录，且脚本默认拒绝覆盖非插件生成的同名文件。macOS 只规范化 /var、/tmp、/etc 的已知 /private 系统祖先别名，项目内部符号链接仍逐级拒绝；配置与草稿均不可将插件 scripts/skills/templates 源码映射成规划文档。只读调查保持原有独立放行逻辑。
+看板固定脚本只接受明确 on / off / status 与不重复的 --root / --task 键值，不需要实施任务；三宿主固定 WORKFLOW_HOST 前缀均支持。动作可放在白名单键值之前或之后，标量选项重复仍拒绝。无 action、serve、其他参数、任意脚本和 shell 拼接不属于免任务命令。init 的固定 detect.sh、git check-ignore -v 与固定 check_docs.py --root PROJECT [--check-config] 独立只读放行，不要求实施任务。固定 `vendor_check_docs.py --check <项目内路径>` 独立只读放行；`--output scripts/check_docs.py` 仅在当前会话持有活跃 `init` 规划登记时放行，拒绝 `--force`、符号链接、路径穿越与插件源码目录，且脚本默认拒绝覆盖非插件生成的同名文件。macOS 只规范化 /var、/tmp、/etc 的已知 /private 系统祖先别名，项目内部符号链接仍逐级拒绝；配置与草稿均不可将插件 scripts/skills/templates 源码映射成规划文档。只读调查保持原有独立放行逻辑。
 
 ## 小接口
 
 所有修改方法前缀均为 `(task_id, expected_version, request_id, ...)`：
 
-- `create(task_id,tier,acceptance,plan,request_id,details=...)`：登记任务，不偷偷补齐目标和来源。任务字段 `goal/scope/acceptance/source/dependencies` 缺失呈现 missing。依赖使用 `{id,status}`，空列表表示无依赖。会阻止实施的待确认项按原问题编号登记为 `pending`；状态为 `done` 后才满足该依赖。Agent 按 [开工检查](../../plugins/workflow-core/skills/kickoff/SKILL.md#待确认项的追问与恢复) 向用户追问，并在取得结论后用 `update-task` 更新原依赖。
+- `create(task_id,tier,acceptance,plan,request_id,details=...)`：登记任务，不偷偷补齐目标和来源。任务字段 `goal/scope/acceptance/source/dependencies` 缺失呈现 missing。依赖使用 `{id,status}`，空列表表示无依赖。会阻止实施的待确认项按原问题编号登记为 `pending`；状态为 `done` 后才满足该依赖。Agent 按 [需求澄清](../../plugins/workflow-core/skills/clarify/SKILL.md) 与 [开工检查](../../plugins/workflow-core/skills/kickoff/SKILL.md#待确认项的追问与恢复) 向用户追问，并在取得结论后回写文档且用 `update-task` 更新原依赖。
 - `confirm_tier(..., actor, selected_tier=None)`：确认当前档位，或在待定档轮次内原子地记录用户选中的档位。选中档位需要不同的步骤、方案或验证计划时，保留选择并报告待补项。
 - `check-hooks [--session SESSION]`：纯只读前置诊断入口（不要求 `--task`、不创建 `.speclock/` 也不触发旧库迁移），按「显式 `--session` > `CODEX_THREAD_ID` / `CLAUDE_SESSION_ID` / `CURSOR_CONVERSATION_ID` > 任务当前轮次绑定」解析会话并检查 SpecLock Hook 活跃状态；Claude Code `SessionStart` 会在存在 `CLAUDE_ENV_FILE` 时自动持久化 `WORKFLOW_HOST=claude` 与 `CLAUDE_SESSION_ID`，并在已接入项目注入 `Claude session_id` 与 CLI 路径；Cursor `sessionStart` 会在 `env` 返回 `WORKFLOW_HOST=cursor` 与 `CURSOR_CONVERSATION_ID`；同时在 `list`、`status`、`prepare`、`bind-executor`、`resume` 响应中内联返回 `hooks` 字段（含 `hook_active`、`hook_events`、可选 `hook_host` / `session_id` / `other_active_sessions` 与 `hook_warning`）。当 `hook_active` 为 `false` 时，Agent 禁止发起原生单选卡片或引导聊天口令，应提示宿主授权并重启会话或改用终端交互确认；当存在其他会话记录但未解析到当前会话 ID 时，`hook_active` 为 `null` 并返回 `ENGINE_HOOK_SESSION_UNKNOWN`。
 - `request-confirmation`：由 Agent 为当前任务、轮次、版本及绑定会话准备聊天确认（使用宿主无关聊天通道，兼容旧版宿主前缀通道；亦在 `prepare --request-tier` 中复用，仅作为缺少原生单选工具时的降级通道）。命令仅登记请求，并返回 `hook_active` / `hook_events` / `hook_host` / `hook_warning` 诊断字段以识别未触发 `UserPromptSubmit` / `beforeSubmitPrompt` 的会话；当 `--kind approval` 时会自动生成只读审阅稿（不弹出外部窗口）并在响应内联返回 `review_path`、`review_display_path`、`review_markdown` 与 `presentation_note`。宿主用户消息钩子在剥离首尾成对 Markdown/引号包裹后严格匹配中英文纯口令（`选轻量档`/`选标准档`/`选完整档`、`Select Light Tier`/`Select Standard Tier`/`Select Full Tier`、`批准方案`、`Approve Proposal`/`Approve Plan`）并登记确认。Claude Code（`AskUserQuestion` / `ExitPlanMode`，支持中英文标签、`header` 键映射与字符串 JSON 回执）与 Codex（支持同步 `request_user_input` 与异步 `request_user_input_async`；后者在 `PostToolUse` 返回保持回合等待指引，`UserPromptSubmit` 支持解析 `<send_user_message_question_reply>` 并严格校验 `call_id` 与控制摘要后落库）原生单选卡片同时支持定档（`tier_confirmation`，兼容 `轻量档`/`标准档`/`完整档` 与 `Light Tier`/`Standard Tier`/`Full Tier`）与完整档方案批准（`approval`，须提供「批准方案」或 `Approve Proposal` 及至少一个不批准选项；`PreToolUse` 会校验方案、步骤与验证配置已就绪，否则返回 `ENGINE_APPROVAL_NOT_READY`，并校验当前版本及 `control_digest` 对应的审阅稿已通过 `render-md --save` 导出，否则返回 `ENGINE_APPROVAL_REVIEW_REQUIRED`），原生选项标签兼容 `(Recommended)` / `（推荐）` 后缀。CLI `create`/`prepare` 的 `--tier` 同时支持中文（`轻量`/`标准`/`完整`）与英文（`light`/`standard`/`full`）。

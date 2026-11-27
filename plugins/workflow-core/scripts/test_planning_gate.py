@@ -150,7 +150,7 @@ class PlanningGateTests(unittest.TestCase):
             safe_path(self.root, str(alias_root / "docs" / "new.md"))
 
     def test_plugin_targets_cannot_be_granted_by_config(self):
-        for operation, draft in (("init", True), ("prd-breakdown", False)):
+        for operation, draft in (("init", True), ("prd-breakdown", False), ("clarify", False)):
             config = {"version": "1", "docs": {"home": "plugins/workflow-core/templates/task-card.md", "cards_dir": "plugins/workflow-core/templates"}}
             if not draft:
                 (self.root / "ai-workflow.yaml").write_text("version: 1\ndocs:\n  home: plugins/workflow-core/templates/task-card.md\n  cards_dir: plugins/workflow-core/templates\n")
@@ -179,6 +179,7 @@ class PlanningGateTests(unittest.TestCase):
     def test_planning_context_does_not_request_implementation(self):
         text = host_gate.context(self.event())
         self.assertIn("init", text)
+        self.assertIn("clarify", text)
         self.assertNotIn("再 start", text)
         self.grant()
         text = host_gate.context(self.event())
@@ -285,3 +286,62 @@ class PlanningGateTests(unittest.TestCase):
                 f"python3 {vendor} --output scripts/check_docs.py",
                 {"cwd": str(plugin_root), "session_id": "s1"},
             ))
+
+    def test_clarify_operation_scope_restrictions_and_check_docs(self):
+        allowed_targets = (
+            "docs/product/任务/账户.md",
+            "docs/product/需求/需求说明.md",
+            "docs/product/术语表.md",
+            "docs/product/设计/设计索引.md",
+            "docs/product/任务/版本任务总览.md",
+        )
+        open_args = ["open", "--operation", "clarify"]
+        for path in allowed_targets:
+            open_args.extend(["--path", path])
+        self.run_cli(*open_args)
+
+        for path in allowed_targets:
+            self.assertIsNone(host_gate.pre_tool(self.event("Write", file_path=path)), path)
+            self.assertIsNone(host_gate.pre_tool(self.event("Edit", file_path=str(self.root / path))), path)
+
+        valid_patch = "*** Begin Patch\n*** Add File: docs/product/任务/账户.md\n+已澄清\n*** End Patch"
+        self.assertIsNone(host_gate.pre_tool(self.event("apply_patch", patch=valid_patch)))
+
+        self.assertIn("ENGINE_PLANNING_TARGET_DENIED", host_gate.pre_tool(self.event("Write", file_path="docs/product/任意.md")))
+        self.assertIn("ENGINE_PLANNING_TARGET_DENIED", host_gate.pre_tool(self.event("Write", file_path="src/test.py")))
+        for tool, data in [("Shell", {"command": "printf x > docs/product/任务/账户.md"}), ("mcp__update", {"path": "docs/product/任务/账户.md"})]:
+            self.assertIn("ENGINE_PLANNING_TOOL_UNSUPPORTED", host_gate.pre_tool(self.event(tool, **data)))
+
+        for bad_path in ("AGENTS.md", "ai-workflow.yaml", "docs/development/standards.md", "src/test.py"):
+            argv = ["python3", str(self.cli), "open", "--root", str(self.root), "--session", "s1", "--operation", "clarify", "--path", bad_path]
+            result = subprocess.run(argv, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 2, bad_path)
+
+        draft_argv = [
+            "python3", str(self.cli), "open", "--root", str(self.root), "--session", "s1",
+            "--operation", "clarify", "--path", "docs/product/任务/账户.md",
+            "--config-json", json.dumps({"version": "1"}),
+        ]
+        self.assertEqual(subprocess.run(draft_argv, capture_output=True, text=True).returncode, 2)
+
+        vendor = Path(host_gate.__file__).with_name("vendor_check_docs.py")
+        self.assertIsNotNone(host_gate.pre_tool(self.event("Shell", command=f"python3 {vendor} --output scripts/check_docs.py")))
+
+        plugin = self.cli.parent.parent
+        check_cmd = f"python3 {plugin}/scripts/check_docs.py --root {self.root}"
+        self.assertIsNone(host_gate.pre_tool(self.event("Shell", command=check_cmd)))
+        self.assertIsNone(host_gate.pre_tool(self.event("Shell", command=f"WORKFLOW_HOST=codex {check_cmd}")))
+        for bad_check in (
+            f"python3 {plugin}/scripts/check_docs.py --root /tmp",
+            f"python3 {plugin}/scripts/check_docs.py --root {self.root} --evil x",
+            f"python3 {plugin}/scripts/check_docs.py --root {self.root} --check-config --check-config",
+        ):
+            self.assertIsNotNone(host_gate.pre_tool(self.event("Shell", command=bad_check)), bad_check)
+
+        self.run_cli("close")
+        self.assertIn("ENGINE_TASK_UNBOUND", host_gate.pre_tool(self.event("Write", file_path="docs/product/任务/账户.md")))
+        from workflow_planning_cli import session_path
+        audit = session_path(self.root, "s1").with_suffix(".jsonl")
+        entries = [json.loads(line) for line in audit.read_text(encoding="utf-8").splitlines()]
+        self.assertEqual(entries[0]["operation"], "clarify")
+        self.assertIn("closed_at", entries[-1])

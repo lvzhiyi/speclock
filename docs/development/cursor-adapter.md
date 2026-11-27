@@ -1,4 +1,4 @@
-# Cursor 适配（0.29.0）
+# Cursor 适配（0.30.0）
 
 本仓库仅为 `workflow-core` 提供 Cursor 原生插件清单。根 `.cursor-plugin/marketplace.json` 只列该插件，其他维度插件、组合包和外部依赖不承诺可在 Cursor 安装。本版本提供远程仓库发布内容；安装与启用需通过 Cursor 支持的插件入口完成，不直接修改用户全局配置。
 
@@ -31,8 +31,8 @@ Agent 先核对 `check-hooks` 或入口响应中的 `hooks.hook_active` 为 `tru
 ## 支持边界
 
 - preToolUse 显式输出 allow/deny，绝不输出 ask；Git 调查的 updated_input 保留原字段并禁用外部 diff/textconv。
-- Read/Glob/Grep/rg/SemanticSearch/ListDir/GlobFileSearch 与 AskQuestion 允许只读调查；未知 MCP、Shell 写命令、Task 仍须通过共享引擎就绪检查，explore 名称不构成只读证明。Write/Delete/Edit/StrReplace 只接受非空字符串目标 `file_path`、`path`、`target_file`；`EditNotebook` 兼容 `file_path`/`path`/`target_file`/`notebook_path`/`target_notebook`；未知 schema 拒绝；目标范围、会话和基线由共享门禁验证。
-- `init` 规划态下放行固定 `vendor_check_docs.py --output scripts/check_docs.py`（拒绝 `--force` 与越界目标）以及原生 `Write`/`Edit`/`StrReplace`/`apply_patch` 写已登记配置与文档骨架；`--check` 只读校验独立放行。
+- Read/Glob/Grep/rg/SemanticSearch/ListDir/GlobFileSearch 与 AskQuestion 允许只读调查；`PreToolUse` 仅守护本地仓库写入——原生编辑工具、写入本地仓库的 MCP 工具、本地修改/解释器执行型 Shell 命令、`.speclock/` 状态路径与 `Task` 委派须通过共享引擎就绪检查，外部非本地写入型 MCP/浏览器工具及非本地写入型 CLI（如 `apifox` 查询、`git` 只读管道）直接放行；`explore` 名称本身不构成只读证明。Write/Delete/Edit/StrReplace 只接受非空字符串目标 `file_path`、`path`、`target_file`；`EditNotebook` 兼容 `file_path`/`path`/`target_file`/`notebook_path`/`target_notebook`；未知 schema 拒绝；目标范围、会话和基线由共享门禁验证。
+- `init` 规划态下放行固定 `vendor_check_docs.py --output scripts/check_docs.py`（拒绝 `--force` 与越界目标）以及原生 `Write`/`Edit`/`StrReplace`/`apply_patch` 写已登记配置与文档骨架；`prd-breakdown` 与 `clarify` 规划态下放行原生 `Write`/`Edit`/`StrReplace`/`apply_patch` 写已登记产品文档与直接模块卡，以及只读 `check_docs.py --root <项目根>`（`--check-config` 可选）；`--check` 只读校验独立放行。`AskQuestion` 可直接用于 `clarify` 需求澄清访谈，不进入确认授权链。
 - Task 仅在父任务已绑定且当前轮次授权就绪时允许委派；子 Agent 不因此取得独立授权，必须使用其实际会话重新绑定、读取基线。subagentStart 仅返回合法的 permission/user_message，提醒不等于全部子工具路径已覆盖；Cursor 未回调的写入路径不在保证内。插件不是系统沙箱。
 - sessionStart 返回 `env`（`WORKFLOW_HOST`、`CURSOR_CONVERSATION_ID`）与 `additional_context`；postToolUse 返回适用的 `additional_context`。
 - 看板 CLI 使用 `WORKFLOW_HOST=cursor` 将服务运行信息存放在状态目录（默认项目内 `.speclock/dashboard.json`），任务数据来自同一状态目录下的引擎数据库。

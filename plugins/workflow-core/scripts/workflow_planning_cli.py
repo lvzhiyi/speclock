@@ -87,7 +87,7 @@ def legal_target(root, operation, value, config):
     if path in exact:
         return path
     cards = safe_path(root, doc("cards_dir"))
-    if operation == "prd-breakdown" and Path(path).parent.as_posix() == cards:
+    if operation in ("prd-breakdown", "clarify") and Path(path).parent.as_posix() == cards:
         return path
     if operation == "init":
         dev = safe_path(root, doc("dev_docs"))
@@ -148,7 +148,7 @@ def parser():
     result.add_argument("action", choices=("open", "close", "status"))
     result.add_argument("--root", required=True)
     result.add_argument("--session", required=True)
-    result.add_argument("--operation", choices=("init", "prd-breakdown"))
+    result.add_argument("--operation", choices=("init", "prd-breakdown", "clarify"))
     result.add_argument("--path", action="append", default=[])
     result.add_argument("--ttl", type=int, default=1800)
     result.add_argument("--config-json")

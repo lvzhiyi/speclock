@@ -1,6 +1,6 @@
 # SpecLock
 
-**English** | [简体中文](README.zh-CN.md) · [Full walkthrough (YouTube)](https://youtu.be/ZKFB6Ni0aZ4) · [v0.29.0](docs/development/release-0.29.0.md)
+**English** | [简体中文](README.zh-CN.md) · [Full walkthrough (YouTube)](https://youtu.be/ZKFB6Ni0aZ4) · [v0.30.0](docs/development/release-0.30.0.md)
 
 **Your coding agent says the tests passed. SpecLock requires the results before it accepts a review.**
 
@@ -39,6 +39,8 @@ Try adding token expiry and revocation in an example project, without touching y
 
 5. Confirm the **Full** tier and approve the proposal after reviewing it. Once the required checks and review pass, the task card will say **Review Passed, Pending Human Acceptance**. It will not be checked off automatically.
 
+> Want to test requirement clarification first? Send `$workflow-core:clarify AUTH-R04` in the same example directory to walk through a `grill-me`-style decision-tree interview on a pending-clarification card before kicking off implementation.
+
 <details>
 <summary>Watch the full end-to-end walkthrough on YouTube</summary>
 
@@ -51,6 +53,7 @@ Try adding token expiry and revocation in an example project, without touching y
 | Stage | What happens |
 | --- | --- |
 | **1. Break down a PRD (optional)** | [`prd-breakdown`](plugins/workflow-core/skills/prd-breakdown/SKILL.md) turns a product requirements document into independently testable tasks, with source references, dependencies, and acceptance criteria in repository task cards. Have an existing task or a well-scoped small edit? Go straight to confirmation. |
+| **1.5 Clarify requirements (when pending)** | For task cards marked pending confirmation or carrying unresolved questions or ambiguous scope/acceptance, [`clarify`](plugins/workflow-core/skills/clarify/SKILL.md) investigates existing code and docs first, then interviews branch by branch along a decision tree (`grill-me` style) with recommended answers and writes the confirmed conclusions back to the card and product docs before kickoff. |
 | **2. Confirm and start** | The agent locates the task, checks the workspace, and builds the required-reading and verification lists. You confirm scope and tier, and separately review and approve the proposal for a Full task. The engine records receipts for required reading; missing or truncated reads block implementation. |
 | **3. Implement by tier** | **Light:** make the smallest change that satisfies the todo. **Standard:** use a 3–5 step plan in the existing card or issue, and run failing cases and targeted regression tests along the way. **Full:** save the approved proposal and design as `proposal.md` and `design.md`, then work through the ordered todos. All tiers track step completion and prefer writing a failing test first; if that is not appropriate, record why and what will be checked instead. |
 | **4. Verify** | Run the checks specified under `verify` in `ai-workflow.yaml`: documentation rules, formatting, static analysis, relevant tests, and any required builds or end-to-end tests. Record commands, exit codes, and the workspace snapshot. A missing, failed, or stale check blocks review. |
@@ -111,7 +114,7 @@ Add this repo as a marketplace and select `workflow-core`, or load `plugins/work
 ## Use it in your project
 
 1. Run `workflow-core:init` once per project (Codex: `$workflow-core:init`; Claude Code: `/workflow-core:init`). Review the proposed `ai-workflow.yaml`, required standards, and check commands.
-2. Use `workflow-core:workflow` with a task ID or a short request. For a full PRD, use [`prd-breakdown`](plugins/workflow-core/skills/prd-breakdown/SKILL.md) first.
+2. Use `workflow-core:workflow` with a task ID or a short request. For a full PRD, use [`prd-breakdown`](plugins/workflow-core/skills/prd-breakdown/SKILL.md) first; for cards still marked pending confirmation or with unclear scope, run [`clarify`](plugins/workflow-core/skills/clarify/SKILL.md) (`workflow-core:clarify`) first to converge decisions and update the card.
 3. For an interrupted task, give the next session its task ID and [handoff notes](plugins/workflow-core/skills/handoff/SKILL.md), if available.
 
 ## More
@@ -119,4 +122,4 @@ Add this repo as a marketplace and select `workflow-core`, or load `plugins/work
 - **Workflow reference:** [Workflow skill](plugins/workflow-core/skills/workflow/SKILL.md#任务路径) · [Handling failed checks](plugins/workflow-core/skills/verify/SKILL.md#失败处理顺序) · [Engine protocol and CLI](docs/development/workflow-engine.md#cli-示例)
 - **Project tools:** [Read-only dashboard](plugins/workflow-core/skills/dashboard/SKILL.md) · [Local metrics](plugins/workflow-core/skills/metrics/SKILL.md) · [Standalone doc checker](plugins/workflow-core/scripts/vendor_check_docs.py)
 - **Optional plugins:** [`stack-flutter`](plugins/stack-flutter), [`design-pixso`](plugins/design-pixso), and [`api-apifox`](plugins/api-apifox). Claude Code can install the [combined preset](README.zh-CN.md#可选插件).
-- **Project links:** [Issues](https://github.com/lvzhiyi/speclock/issues) · [Release notes](docs/development/release-0.29.0.md) · [MIT License](LICENSE)
+- **Project links:** [Issues](https://github.com/lvzhiyi/speclock/issues) · [Release notes](docs/development/release-0.30.0.md) · [MIT License](LICENSE)

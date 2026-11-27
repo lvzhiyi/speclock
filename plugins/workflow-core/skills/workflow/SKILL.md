@@ -1,6 +1,6 @@
 ---
 name: workflow
-description: 任务级工作流总入口。开发、文档、Bug、重构或续做任务前，读取配置、核对任务与有效证据，并选择需求拆解、就绪检查、实施、验证、评审或交接技能。
+description: 任务级工作流总入口。开发、文档、Bug、重构或续做任务前，读取配置、核对任务与有效证据，并选择需求拆解、需求澄清、就绪检查、实施、验证、评审或交接技能。
 ---
 
 # 任务级工作流
@@ -21,20 +21,21 @@ Cursor 在 Agent 聊天里收集档位和方案批准，支持中文（`选轻�
 
 ## 任务路径
 
-收到「执行/继续某个任务」时，先运行 `check-hooks` 或核对 `list`/`status` 内联的 `hooks.hook_active` 前置检查当前会话钩子是否已授权运行，再定位任务并核对当前阶段。待实施和待确认都进入 `kickoff`；已在实施、验证或评审阶段的任务按当前轮次和有效证据继续。仍需用户决定的关键缺项由 Agent 主动提问，收到答复后在同一会话复核并推进。
+收到「执行/继续某个任务」时，先运行 `check-hooks` 或核对 `list`/`status` 内联的 `hooks.hook_active` 前置检查当前会话钩子是否已授权运行，再定位任务并核对当前阶段。若任务卡处于 `协作状态：待确认`、含未决 `- 待确认：` / `Qxx` 项或存在会改变实施/验收的关键歧义，先按 `clarify`（`grill-me` 式逐枝访谈）收敛决策并回写结论，再进入 `kickoff` / `tiering`；若用户仅要求调用 `clarify` 澄清卡片，回写文档、校验并 `close` 后即结束本轮，不自行转入实施。已在实施、验证或评审阶段的任务按当前轮次和有效证据继续。
 
 1. **需求接收与拆解**（`prd-breakdown`）：同一入口接收来源、澄清目标、范围、验收与依赖；小任务原位简记，不强制 PRD。
-2. **任务就绪检查**（`kickoff`、`tiering`）：三档均由人工确认档位及实施范围；标准原位 3～5 步短计划无需额外方案审批；完整方案另行批准。未就绪可调查，不可实施。
-3. **实施**（`implement`）：成功完整读取适用基线后，按结构化 todos 推进；TDD 优先非强制，不采用记录原因与替代验证。
-4. **验证**（`verify`）：三档均真实执行配置检查；失败分类、保留尝试，原范围修复复验。
-5. **Agent 双轴评审**（`review`）：三档均做 Spec + Standards；规定验证全部通过、证据有效且两轴通过，才达到 `review_passed`（评审通过）。
-6. **Agent 总结与人工交接**（`deliver`）：汇报真实状态和证据，人工验收/交付另行记录，不自动宣称产品完成。
+2. **需求澄清（待确认按需）**（`clarify`）：对协作状态为「待确认」、含未决待确认项或目标/范围/验收模糊的任务卡，先自查事实，再沿决策树逐枝追问并给出推荐答案，将确认结论回写任务卡与产品文档。
+3. **任务就绪检查**（`kickoff`、`tiering`）：三档均由人工确认档位及实施范围；标准原位 3～5 步短计划无需额外方案审批；完整方案另行批准。未就绪可调查，不可实施。
+4. **实施**（`implement`）：成功完整读取适用基线后，按结构化 todos 推进；TDD 优先非强制，不采用记录原因与替代验证。
+5. **验证**（`verify`）：三档均真实执行配置检查；失败分类、保留尝试，原范围修复复验。
+6. **Agent 双轴评审**（`review`）：三档均做 Spec + Standards；规定验证全部通过、证据有效且两轴通过，才达到 `review_passed`（评审通过）。
+7. **Agent 总结与人工交接**（`deliver`）：汇报真实状态和证据，人工验收/交付另行记录，不自动宣称产品完成。
 
 `handoff` 随时保存与恢复；`dashboard` 提供任务级只读查询。只做整理的授权到整理结束，不自行转入产品实施。
 
 ## 规划与实施分界
 
-用户调用 `init` / `prd-breakdown` 时，按所选技能显式执行固定绝对入口 `workflow_planning_cli.py open --root "项目绝对根" --session "宿主真实会话" --operation init或prd-breakdown --path "精确目标"`；不为文档拆解创建假实施任务。Cursor 使用 conversation_id，Codex 使用真实 session/thread（可用时为 CODEX_THREAD_ID），Claude 使用 session_id；不能假称钩子自动感知了 Skill。具体登记、草稿自举、时效及 close 命令见对应技能。只放行授权清单中的原生文档编辑，不放行 Shell 写文件、MCP 混写或产品代码；结束、取消或交接前 close。dashboard 的明确 on/off/status 同样不依赖实施任务。两者都不构成真人身份认证，不替代实施任务的原门槛。
+用户调用 `init` / `prd-breakdown` / `clarify` 时，按所选技能显式执行固定绝对入口 `workflow_planning_cli.py open --root "项目绝对根" --session "宿主真实会话" --operation init|prd-breakdown|clarify --path "精确目标"`；不为文档拆解或需求澄清创建假实施任务。Cursor 使用 conversation_id，Codex 使用真实 session/thread（可用时为 CODEX_THREAD_ID），Claude 使用 session_id；不能假称钩子自动感知了 Skill。具体登记、草稿自举、时效及 close 命令见对应技能。只放行授权清单中的原生文档编辑，不放行 Shell 写文件、MCP 混写或产品代码；结束、取消或交接前 close。dashboard 的明确 on/off/status 同样不依赖实施任务。两者都不构成真人身份认证，不替代实施任务的原门槛。
 
 ## 始终启用的插件级防护栏
 

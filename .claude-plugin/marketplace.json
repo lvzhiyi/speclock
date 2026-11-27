@@ -7,7 +7,7 @@
     {
       "name": "workflow-core",
       "source": "./plugins/workflow-core",
-      "description": "任务级开发工作流：人工定档与方案审批、基线读取门禁、验证与双轴评审、只读任务看板、执行观测及人工交接"
+      "description": "任务级开发工作流：需求澄清、人工定档与方案审批、基线读取门禁、验证与双轴评审、只读任务看板、执行观测及人工交接"
     },
     {
       "name": "stack-flutter",

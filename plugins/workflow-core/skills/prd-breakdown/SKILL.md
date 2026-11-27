@@ -109,6 +109,8 @@ WORKFLOW_HOST=HOST python3 "${CLAUDE_PLUGIN_ROOT}/scripts/workflow_planning_cli.
 - 待确认：<具体缺项或冲突>｜影响：<阻塞的子需求/步骤>｜恢复条件：<取得什么后继续>
 ```
 
+对保留 `协作状态：待确认` 或含阻塞 `- 待确认：` 项的任务卡，在进入 `kickoff` 定档开工前应先使用 `workflow-core:clarify` 做 `grill-me` 式逐枝访谈澄清并回写结论。
+
 ## 8. 变更同步与状态
 
 - 原文更新：记录新版本及差异 → 更新本地需求 → 复核范围/验收/依赖 → 评估规格/测试影响 → 必要时重新批准。

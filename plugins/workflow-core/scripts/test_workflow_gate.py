@@ -32,7 +32,7 @@ class GateTests(unittest.TestCase):
         for host in ("claude", "codex"):
             for tool, data in (("Edit", {"file_path": "src/a.py"}), ("Write", {"file_path": "a.py"}),
                                ("apply_patch", {"command": "*** Add File: x.py"}), ("Bash", {"command": "python3 -c pass"}),
-                               ("mcp__example__update", {})):
+                               ("mcp__filesystem__write_file", {"path": "x.py"})):
                 with self.subTest(host=host, tool=tool):
                     result = self.hook("PreToolUse", host, tool_name=tool, tool_input=data)
                     self.assertEqual(result.returncode, 0)
@@ -42,8 +42,18 @@ class GateTests(unittest.TestCase):
                     self.assertNotIn('"ask"', result.stdout)
 
     def test_readonly_and_unconfigured_project_are_allowed(self):
-        for tool, data in (("Read", {"file_path": "rules.md"}), ("Bash", {"command": "git status --short"})):
-            self.assertEqual(self.hook("PreToolUse", tool_name=tool, tool_input=data).stdout, "")
+        for host in ("claude", "codex"):
+            for tool, data in (
+                ("Read", {"file_path": "rules.md"}),
+                ("Bash", {"command": "git status --short"}),
+                ("Bash", {"command": "apifox --help"}),
+                ("Bash", {"command": "apifox api list --help"}),
+                ("mcp__apifox__get_api", {"path": "/api/v1/courses"}),
+                ("mcp__pixso__get_node_dsl", {}),
+                ("browser_navigate", {"url": "https://apifox.com"}),
+            ):
+                with self.subTest(host=host, tool=tool, data=data):
+                    self.assertEqual(self.hook("PreToolUse", host, tool_name=tool, tool_input=data).stdout, "")
         other = Path(self.tmp.name) / "other"
         other.mkdir()
         self.assertEqual(self.hook("PreToolUse", cwd=other, tool_name="Write", tool_input={"file_path": "x.py"}).stdout, "")
@@ -593,6 +603,46 @@ class GateTests(unittest.TestCase):
         self.assertIn("ENGINE_CONFIRMATION_RECORDED", self.hook("PostToolUse", "claude", **app_ev, tool_response=json.dumps({"answers": {"Approval": "Approve Proposal (Recommended)"}})).stdout)
         approved = run_cli("status", "--task", "T-CC")["task"]
         self.assertNotIn("approval", approved["missing"])
+
+    def test_claude_and_codex_clarify_planning_and_question_flow(self):
+        import shlex
+        planning_cli = str(HERE / "workflow_planning_cli.py")
+        check_docs = str(HERE / "check_docs.py")
+        card_rel = "docs/product/任务/账户.md"
+        for host, q_tool, edit_tool in (
+            ("claude", "AskUserQuestion", "MultiEdit"),
+            ("codex", "request_user_input", "apply_patch"),
+        ):
+            session = f"clarify-{host}"
+            with self.subTest(host=host):
+                q_input = {"questions": [{"id": "q1", "question": "Q01 token rotation policy?", "multiSelect": False, "options": [{"label": "Invalidate immediately (Recommended)"}, {"label": "Grace period"}]}]}
+                self.assertEqual(self.hook("PreToolUse", host, session_id=session, tool_name=q_tool, tool_input=q_input, tool_use_id=f"{host}-q1").stdout, "")
+                self.assertEqual(self.hook("PostToolUse", host, session_id=session, tool_name=q_tool, tool_input=q_input, tool_use_id=f"{host}-q1", tool_response={"answers": {"q1": "Invalidate immediately (Recommended)"}}).stdout, "")
+
+                cli_env = {k: v for k, v in os.environ.items() if not k.startswith("WORKFLOW_")}
+                cli_env["WORKFLOW_ENGINE_HOME"] = self.tmp.name
+
+                open_cmd = shlex.join(["python3", planning_cli, "open", "--root", str(self.project), "--session", session, "--operation", "clarify", "--path", card_rel])
+                self.assertEqual(self.hook("PreToolUse", host, session_id=session, tool_name="Bash", tool_input={"command": open_cmd}).stdout, "")
+                opened = subprocess.run(["python3", planning_cli, "open", "--root", str(self.project), "--session", session, "--operation", "clarify", "--path", card_rel], text=True, capture_output=True, env=cli_env)
+                self.assertEqual(opened.returncode, 0, opened.stdout + opened.stderr)
+
+                edit_input = {"file_path": card_rel} if edit_tool != "apply_patch" else {"patch": f"*** Begin Patch\n*** Add File: {card_rel}\n+clarified\n*** End Patch"}
+                self.assertEqual(self.hook("PreToolUse", host, session_id=session, tool_name=edit_tool, tool_input=edit_input).stdout, "")
+
+                bad_edit = json.loads(self.hook("PreToolUse", host, session_id=session, tool_name="Edit", tool_input={"file_path": "src/a.py"}).stdout)
+                self.assertIn("ENGINE_PLANNING_TARGET_DENIED", bad_edit["hookSpecificOutput"]["permissionDecisionReason"])
+
+                check_cmd = shlex.join(["python3", check_docs, "--root", str(self.project)])
+                self.assertEqual(self.hook("PreToolUse", host, session_id=session, tool_name="Bash", tool_input={"command": check_cmd}).stdout, "")
+
+                close_cmd = shlex.join(["python3", planning_cli, "close", "--root", str(self.project), "--session", session])
+                self.assertEqual(self.hook("PreToolUse", host, session_id=session, tool_name="Bash", tool_input={"command": close_cmd}).stdout, "")
+                closed = subprocess.run(["python3", planning_cli, "close", "--root", str(self.project), "--session", session], text=True, capture_output=True, env=cli_env)
+                self.assertEqual(closed.returncode, 0, closed.stdout + closed.stderr)
+
+                after_close = json.loads(self.hook("PreToolUse", host, session_id=session, tool_name="Edit", tool_input={"file_path": card_rel}).stdout)
+                self.assertIn("ENGINE_TASK_UNBOUND", after_close["hookSpecificOutput"]["permissionDecisionReason"])
 
 
 if __name__ == "__main__":

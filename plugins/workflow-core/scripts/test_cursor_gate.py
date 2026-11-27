@@ -41,10 +41,20 @@ class CursorGateTests(unittest.TestCase):
         self.assertIsNotNone(importlib.util.find_spec("cursor_gate"), "缺少 Cursor 同步适配器")
 
     def test_no_task_and_readonly(self):
-        for tool, data in (("Write", {"file_path": "x"}), ("Shell", {"command": "touch x"}), ("Task", {"subagent_type": "explore"}), ("MCP:service:write", {})):
+        for tool, data in (("Write", {"file_path": "x"}), ("Shell", {"command": "touch x"}), ("Task", {"subagent_type": "explore"}), ("MCP:filesystem:write_file", {"path": "x"})):
             self.assertEqual(self.call(self.event(tool, **data))["permission"], "deny")
-        for tool in ("Read", "Glob", "Grep", "rg", "AskQuestion"):
-            self.assertEqual(self.call(self.event(tool))["permission"], "allow")
+        for tool, data in (
+            ("Read", {}),
+            ("Glob", {}),
+            ("Grep", {}),
+            ("rg", {}),
+            ("AskQuestion", {}),
+            ("MCP:apifox:get_api", {"path": "/api/v1/courses"}),
+            ("MCP:pixso:get_node_dsl", {}),
+            ("Shell", {"command": "apifox --help"}),
+            ("Shell", {"command": "apifox api list | jq ."}),
+        ):
+            self.assertEqual(self.call(self.event(tool, **data))["permission"], "allow")
 
     def test_planning_help_without_task(self):
         cli = str(SCRIPTS / "workflow_planning_cli.py")
@@ -60,7 +70,8 @@ class CursorGateTests(unittest.TestCase):
         self.assertEqual(result["permission"], "allow")
         self.assertIn("--no-ext-diff", result["updated_input"]["command"])
         self.assertIn("--no-textconv", result["updated_input"]["command"])
-        for command in ("git status && touch x", "git remote add x y", "git symbolic-ref HEAD refs/heads/x", "git status || pwd", "git status &&", "pwd && git diff --output=x", "pwd && git diff --ext-diff", "pwd && git show --textconv"):
+        self.assertEqual(self.call(self.event("Shell", command="git status || pwd"))["permission"], "allow")
+        for command in ("git status && touch x", "git remote add x y", "git symbolic-ref HEAD refs/heads/x", "git status || touch x", "git status &&", "pwd && git diff --output=x", "pwd && git diff --ext-diff", "pwd && git show --textconv"):
             self.assertEqual(self.call(self.event("Shell", command=command))["permission"], "deny", command)
 
     def test_planning_lifecycle_without_implementation_task(self):
@@ -78,7 +89,7 @@ class CursorGateTests(unittest.TestCase):
         other_root = Path(self.tmp.name) / "other"
         other_root.mkdir()
         (other_root / "ai-workflow.yaml").write_text("version: 1\n", encoding="utf-8")
-        for operation in ("init", "prd-breakdown"):
+        for operation in ("init", "prd-breakdown", "clarify"):
             target = "docs/product/项目首页.md" if operation == "init" else "docs/product/任务/账户.md"
             argv = ["python3", cli, "open", "--root", str(self.root), "--session", session, "--operation", operation, "--path", target]
             for option, value in (("--session", "other"), ("--root", str(other_root))):
@@ -93,6 +104,11 @@ class CursorGateTests(unittest.TestCase):
             document.parent.mkdir(parents=True, exist_ok=True)
             document.write_text("待确认\n", encoding="utf-8")
             self.assertEqual(self.call(self.event("Edit", path=target, **conversation))["permission"], "allow")
+            self.assertEqual(self.call(self.event("StrReplace", path=target, **conversation))["permission"], "allow")
+            if operation == "clarify":
+                self.assertEqual(self.call(self.event("AskQuestion", questions=[{"question": "Q01 policy?"}], **conversation))["permission"], "allow")
+                check_cmd = f"WORKFLOW_HOST=cursor python3 {SCRIPTS / 'check_docs.py'} --root {self.root}"
+                self.assertEqual(self.call(self.event("Shell", command=check_cmd, **conversation))["permission"], "allow")
             document.write_text("已确认\n", encoding="utf-8")
             self.assertEqual(self.call(self.event("Edit", path=target, conversation_id="other"))["permission"], "deny")
             for path in (str(document.with_name("未登记.md")), "src/a.py"):

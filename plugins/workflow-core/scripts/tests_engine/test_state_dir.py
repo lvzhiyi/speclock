@@ -463,7 +463,7 @@ class StateDirTests(unittest.TestCase):
             root = base / "repo"
             _init_repo(root)
             config = Config({"version": 1}, "test", root)
-            for op in ("init", "prd-breakdown"):
+            for op in ("init", "prd-breakdown", "clarify"):
                 with self.assertRaises(ValueError):
                     workflow_planning_cli.legal_target(root, op, ".speclock/a.md", config)
 
