@@ -10,6 +10,10 @@ SpecLock 是面向 **Codex、Claude Code 和 Cursor** 的 AI 开发工作流插�
 
 ![SpecLock 架构图](docs/images/architecture.png)
 
+![SpecLock 门禁拦截与 Dashboard 演示](docs/images/speclock-demo.gif)
+
+*9 秒速览：端到端测试失败拦截 → 改码后 SHA-256 旧证据作废 → 真实 Dashboard 停在「评审通过，待人工验收」（[观看完整演示](https://youtu.be/ZKFB6Ni0aZ4)）*
+
 ## 快速上手：执行 `AUTH-R03`
 
 在示例项目里为 API Token 加上过期和吊销校验，不动你自己的项目。
