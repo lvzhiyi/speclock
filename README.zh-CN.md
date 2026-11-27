@@ -1,6 +1,6 @@
 # SpecLock
 
-[English](README.md) | **简体中文** · [演示视频](https://github.com/user-attachments/assets/6c399680-073c-4bd3-8bb2-d61fae7f9972) · [完整演示 (YouTube)](https://youtu.be/ZKFB6Ni0aZ4) · [v0.29.0](docs/development/release-0.29.0.md)
+[English](README.md) | **简体中文** · [完整演示 (YouTube)](https://youtu.be/ZKFB6Ni0aZ4) · [v0.29.0](docs/development/release-0.29.0.md)
 
 **AI 说「测试过了」还不够。SpecLock 要看到验证结果，才允许评审。**
 

@@ -1,6 +1,6 @@
 # SpecLock
 
-**English** | [简体中文](README.zh-CN.md) · [Demo video](https://github.com/user-attachments/assets/6c399680-073c-4bd3-8bb2-d61fae7f9972) · [Full walkthrough (YouTube)](https://youtu.be/ZKFB6Ni0aZ4) · [v0.29.0](docs/development/release-0.29.0.md)
+**English** | [简体中文](README.zh-CN.md) · [Full walkthrough (YouTube)](https://youtu.be/ZKFB6Ni0aZ4) · [v0.29.0](docs/development/release-0.29.0.md)
 
 **Your coding agent says the tests passed. SpecLock requires the results before it accepts a review.**
 
