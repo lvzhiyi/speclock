@@ -21,7 +21,7 @@ Cursor 在 Agent 聊天里收集档位和方案批准，支持中文（`选轻�
 
 ## 任务路径
 
-收到「执行/继续某个任务」时，先运行 `check-hooks` 或核对 `list`/`status` 内联的 `hooks.hook_active` 前置检查当前会话钩子是否已授权运行，再定位任务并核对当前阶段。若任务卡处于 `协作状态：待确认`、含未决 `- 待确认：` / `Qxx` 项或存在会改变实施/验收的关键歧义，先按 `clarify`（`grill-me` 式逐枝访谈）收敛决策并回写结论，再进入 `kickoff` / `tiering`；若用户仅要求调用 `clarify` 澄清卡片，回写文档、校验并 `close` 后即结束本轮，不自行转入实施。已在实施、验证或评审阶段的任务按当前轮次和有效证据继续。
+收到「执行/开始/继续某个任务（含 `start <任务ID>`）」时，默认目标是在授权范围内连续推进直至 `review_passed`（待人工验收），而非只调用引擎 `start` / `begin` 登记开工后停下（除非用户明确仅要求准备/开工）。开始前先运行 `check-hooks` 或核对 `list`/`status` 内联的 `hooks.hook_active` 前置检查当前会话钩子是否已授权运行，再定位任务并核对当前阶段。若任务卡处于 `协作状态：待确认`、含未决 `- 待确认：` / `Qxx` 项或存在会改变实施/验收的关键歧义，先按 `clarify`（`grill-me` 式逐枝访谈）收敛决策并回写结论，再进入 `kickoff` / `tiering`；若用户仅要求调用 `clarify` 澄清卡片，回写文档、校验并 `close` 后即结束本轮，不自行转入实施。已在实施、验证或评审阶段的任务按当前轮次和有效证据继续。
 
 1. **需求接收与拆解**（`prd-breakdown`）：同一入口接收来源、澄清目标、范围、验收与依赖；小任务原位简记，不强制 PRD。
 2. **需求澄清（待确认按需）**（`clarify`）：对协作状态为「待确认」、含未决待确认项或目标/范围/验收模糊的任务卡，先自查事实，再沿决策树逐枝追问并给出推荐答案，将确认结论回写任务卡与产品文档。
@@ -51,7 +51,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/workflow_engine_cli.py" --root "项目根
 
 开始前先执行只读前置自检 `check-hooks [--session "当前会话"]`（不依赖任务或状态库，不创建 `.speclock/`），或读取 `list` / `status` / `prepare` / `bind-executor` / `resume` 响应内联的 `hooks` 字段，核对 `hooks.hook_active`。继续与总结前读 `status`，必要时读 `snapshot` / `history`。日常新任务优先使用精简复合入口以减少 CLI 往返（底层门禁与原细粒度命令完全等价）：
 - `prepare`：一步创建 v2 任务（可省略 `--plan` 与 `details.baseline`，自动从 `ai-workflow.yaml` 派生；`details.scope` 必须为仓库相对路径/目录前缀列表，业务范围写入 `goal` / `proposal.scope`）、绑定会话（`--executor` / `--session`），并内联返回 `hooks` 钩子诊断；仅在 `hooks.hook_active` 为 `true` 且当前会话缺少原生单选工具、需降级聊天回复时附加 `--request-tier` 发起聊天定档（使用宿主无关聊天通道，漏传 `WORKFLOW_HOST` 也不再写错通道，并内联返回 `confirmation.hook_active` 诊断）；
-- `begin`：人工定档（及完整档批准）落库后，一步核对就绪前置、按 `--max-bytes` 批量输出全部必读基线正文并登记 SHA-256 回执、`start` 开工并可选 `--tdd-json` 记录 TDD 决策；超限时仍报 `BASELINE_BATCH_LIMIT`，回退 `read-baseline --path` 分批；
+- `begin`：人工定档（及完整档批准）落库后，一步核对就绪前置、按 `--max-bytes` 批量输出全部必读基线正文并登记 SHA-256 回执、`start` 开工并可选 `--tdd-json` 记录 TDD 决策；超限时仍报 `BASELINE_BATCH_LIMIT`，回退 `read-baseline --path` 分批。`begin` 进入 `implementing` 后应在同一回合立即继续实施，不要在 `0/N` 进度处结束回合；
 - 写操作（`prepare` / `begin` / `finish-step` / `run` / `review` 等）支持省略 `--request`（自动生成 UUID；显式重试/回写恢复仍传原 `--request`），响应内联 `progress` 投影，无需再单独调用 `progress --task`；末步 `finish-step` 支持 `--finish-implementation` 一步进入待验证。
 
 引擎会在会话启动及 `prepare`/`begin`/`resume` 等写入口自动对账任务卡：已被任务卡结案（如「评审通过，待人工验收 / 已验收 / 已完成 / 已交付」或勾选 `[x]`）但本机仍未开工的本地记录会被自动关闭为 `cancelled`（`card_superseded`），无需人工手动 `cancel`。若收到 `ENGINE_CARD_CONFLICT` 提示或 `status` 返回 `card_closure.action=needs_decision`（任务卡已结案但本地已开工），Agent 必须向用户如实说明差异并请用户决定是退回新轮次（`return-task`）、拆出新任务还是放弃本地任务，不得擅自 `cancel`，也不得将任务卡状态反向同步为本地通过证据。
