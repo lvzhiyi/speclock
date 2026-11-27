@@ -44,14 +44,6 @@ verify:
     - <完整检查命令>
     - <默认平台构建命令>
 
-platforms:
-  default:                                 # 默认验证的平台
-    - android
-  on_request:                              # 仅用户明确要求时验证
-    - ios
-  excluded:                                # 不考虑的平台
-    - web
-
 design:
   tool: pixso                              # pixso | figma | 无
   source_doc: docs/development/ui.md       # 写明权威设计文件的文档

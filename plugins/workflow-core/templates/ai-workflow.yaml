@@ -44,14 +44,6 @@ verify:
     - <full test suite + static analysis command>
     - <default platform build command>
 
-platforms:
-  default:                                 # Platforms verified by default
-    - android
-  on_request:                              # Verified only when explicitly requested
-    - ios
-  excluded:                                # Out-of-scope platforms
-    - web
-
 design:
   tool: figma                              # figma | pixso | none
   source_doc: docs/development/ui.md       # Document identifying the authoritative design source

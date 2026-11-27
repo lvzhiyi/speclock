@@ -206,6 +206,7 @@ class LoadTests(unittest.TestCase):
                 data = parse((templates_dir / rel).read_text(encoding='utf-8'))
                 self.assertEqual(workflow_config.validate(data), [])
                 self.assertNotIn('engine', data)
+                self.assertNotIn('platforms', data)
 
 
 if __name__ == '__main__':

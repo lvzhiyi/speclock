@@ -42,7 +42,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/skills/init/detect.sh" .
 | 是否有界面 / 后端接口 | `stack`、`flutter_platforms`、`api_tool` | 有前端或移动端视为有界面；有接口工具或网络层目录视为有后端接口 |
 | 评审基线分支 | 功能分支实际合入的分支（`git log --merges --format=%s origin/<候选> -10` 看合并目标），参考远端默认分支 `git symbolic-ref --short refs/remotes/origin/HEAD` | 两者不一致或都取不到时列为待问项 |
 | 验证命令 | `check_entry`、`make_targets`、`package_scripts`、`ci` | 测试/验证规范、`scripts/` 说明、CI 文件中的实际命令 |
-| 默认验证平台 | 测试/验证规范中的约定 | — |
+| 默认验证平台（多端项目可选） | 测试/验证规范中的约定 | — |
 | 代码产物要求 | 代码规范中的注释、生成代码规则 | — |
 | 已有配置 | `existing_workflow_config` | `ai-workflow.yaml` 全文（进入更新模式） |
 
@@ -62,20 +62,20 @@ bash "${CLAUDE_PLUGIN_ROOT}/skills/init/detect.sh" .
 把仍然未知或有歧义的项集中一次提问（有提问工具就用选项形式，每项给推荐值），常见待问项：
 
 - 配置与文档语言：项目已有文档为主的语言，未检测到已有文档时默认**英文**（`en`）；若用户明确偏好中文文档或当前全为中文项目则选用 `zh`（空白项目且意图不明确时一并确认）
-- 默认验证平台（例如只有 `android/ ios/ web/` 目录，没有写明默认验证哪个）
+- 默认验证平台（仅在多端项目存在多个平台目录如 `android/ ios/ web/` 且未写明默认验证哪个时再问）
 - 尚未存在 `scripts/check_docs.py` 时，是否导出自包含的 `scripts/check_docs.py`（默认推荐导出；如不希望在仓库内放置 Python 检查脚本可跳过）
 - 同一文件里有多个候选的权威设计文件
 - 非完整档的交接目录有多个项目约定时，确认 `handoff.default`；没有项目约定时用模板默认值。
 - 标准档、完整档分别跑哪条命令（只找到一条检查命令时可以都用它）
 
-能从仓库确认的不要问。用户没回答的项在英文模板写 `TBD`（不适用写 `none`）、中文模板写“待确认”（不适用写“无”），不填示例值。
+能从仓库确认的不要问。用户没回答的项在英文模板写 `TBD`（不适用写 `none`）、中文模板写“待确认”（不适用写“无”），不填示例值；可选列表字段（如 `platforms` / `notes`）不适用时直接省略，不要写成标量 `none` / `无`。
 
 ## 3. 展示草稿，确认后写入
 
 1. **按语言选择模板目录**：
    - **默认英文（`en`）**：使用 `${CLAUDE_PLUGIN_ROOT}/templates/ai-workflow.yaml` 与 `${CLAUDE_PLUGIN_ROOT}/templates/docs/`（默认路径 `docs/product/index.md`、`docs/product/requirements/prd.md`、`docs/product/tasks`、`docs/product/tasks/overview.md`、`docs/product/design/index.md`、`docs/product/glossary.md`），未确认写 `TBD`，不适用写 `none`。
    - **中文项目（`zh`）**：当项目已有中文产品/工程文档或用户选择中文文档时，使用 `${CLAUDE_PLUGIN_ROOT}/templates/zh/ai-workflow.yaml` 与 `${CLAUDE_PLUGIN_ROOT}/templates/zh/docs/`（对应 `docs/product/项目首页.md` 等中文路径），未确认写“待确认”，不适用写“无”。
-   - 保留对应模板头部的格式说明注释，删掉示例值。只写脚本和技能能直接取用的事实；规则类说明（如“iOS 仅在明确要求时验证”的理由）留在项目 `docs/`，不写进配置。
+   - 保留对应模板头部的格式说明注释，删掉示例值。只写脚本和技能能直接取用的事实；规则类说明（如“iOS 仅在明确要求时验证”的理由）留在项目 `docs/`，不写进配置。默认不生成 `platforms` 段，仅在多端项目明确需要区分 `default` / `on_request` / `excluded` 时按 `- 值` 列表形式添加（不可写成标量 `none` / `无`）。
 2. 先展示「配置项 | 值 | 依据」表和将要写入的文件全文，等用户确认。
 3. 写入项目根目录 `ai-workflow.yaml`，然后在 Agent 入口文件加一行指针（英文项目如 `Workflow config: ai-workflow.yaml at repo root.`；中文项目如“工作流配置：根目录 `ai-workflow.yaml`”）：
    - 优先写 `AGENTS.md`。在 Codex 或 Cursor 中缺少它时新建；在 Claude Code 中，若项目只有独立的 `CLAUDE.md`，可更新该文件。
@@ -140,4 +140,4 @@ docs/development/handoffs/<task-id>.md        其他档位首次跨会话交接�
 - 提示下一步：有 PRD 时用 `workflow-core:prd-breakdown` 技能拆解并生成模块卡。
 - 发现项目文档里还保留着和插件重复的流程正文（三档、交接、交付格式等）时，列出位置并建议迁移：插件里已有的段落改成“见 `workflow-core:<技能>`”，只保留项目特有内容。是否迁移由用户决定，本技能不自动删改。
 - 按 `deliver` 总结真实结果和证据，格式自由；配置初始化不等于任务批准或产品完成。
-- 按实际模板登记适用必读基线与验证命令，不生成 engine 开关或提醒/严格模式。旧开关列入迁移清单，经用户确认清理，不能继续作为防护栏的启停依据；新任务采用 v2，旧任务只显式 adopt。
+- 按实际模板登记适用必读基线与验证命令，不生成 engine 开关或提醒/严格模式，默认不生成 platforms 段。旧开关列入迁移清单，经用户确认清理，不能继续作为防护栏的启停依据；新任务采用 v2，旧任务只显式 adopt。
