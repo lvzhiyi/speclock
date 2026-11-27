@@ -103,10 +103,11 @@ WORKFLOW_HOST=HOST python3 "${CLAUDE_PLUGIN_ROOT}/scripts/workflow_planning_cli.
 | 关键业务规则、接口或批准缺失 | 业务问题登记到需求说明「待确认问题」，接口问题登记到变更或卡 | 只暂停依赖部分 |
 | 文档、源码、状态、证据不一致 | 保留差异，核对版本，必要时重跑最小验证 | 不受影响部分 |
 
-模块卡中的缺项支持简洁自由文本，或结构化格式（含全角 `｜` 时至少写明影响与恢复条件）：
+模块卡中的缺项支持简洁自由文本，或结构化中英文格式（含 `｜` 或 `|` 时须写明影响与恢复条件，供 Dashboard 与 `check_docs.py` 自动提取校验）：
 
 ```text
 - 待确认：<具体缺项或冲突>｜影响：<阻塞的子需求/步骤>｜恢复条件：<取得什么后继续>
+- Pending (Q01): <open question or conflict> | Impact: <blocked scope/step> | Resume when: <condition to proceed>
 ```
 
 对保留 `协作状态：待确认` 或含阻塞 `- 待确认：` 项的任务卡，在进入 `kickoff` 定档开工前应先使用 `workflow-core:clarify` 做 `grill-me` 式逐枝访谈澄清并回写结论。

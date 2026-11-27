@@ -44,8 +44,41 @@ NON_TERMINAL_STATUS_KEYWORDS = (
     'review failed', 'pending human acceptance', 'pending verification', 'cancelled',
 )
 
-# 结构化「待确认」记录（含全角竖线「｜」）必须包含的段落。
+# 结构化「待确认 / Pending」记录（含竖线「｜」或「|」）必须包含的段落。
 PENDING_KEYS = ('影响：', '恢复条件：')
+PENDING_HEAD = re.compile(r'^(?:待确认|Pending(?:\s+Clarification)?)(?:\s*[（(]([^）)]+)[）)])?\s*[:：]\s*(.*)$', re.I)
+PENDING_FIELD_KEYS = {
+    '影响': 'impact',
+    'impact': 'impact',
+    '恢复条件': 'resume',
+    'resume': 'resume',
+    'resume when': 'resume',
+    'resume condition': 'resume',
+}
+
+
+def check_pending_line(line):
+    """校验单行中英文结构化待确认记录，返回缺失字段标签列表。"""
+    if not line.startswith('- ') or ('｜' not in line and '|' not in line):
+        return []
+    parts = re.split(r'[｜|]', line[2:])
+    head = PENDING_HEAD.match(parts[0].strip())
+    if not head:
+        return []
+    is_chinese = parts[0].strip().startswith('待确认')
+    fields = {'question': head.group(2).strip()}
+    for part in parts[1:]:
+        pair = re.split(r'[:：]', part.strip(), maxsplit=1)
+        if len(pair) == 2:
+            key = PENDING_FIELD_KEYS.get(pair[0].strip().lower())
+            if key and pair[1].strip():
+                fields[key] = pair[1].strip()
+    labels = (
+        (('question', '待确认：'), ('impact', '影响：'), ('resume', '恢复条件：'))
+        if is_chinese
+        else (('question', 'Pending:'), ('impact', 'Impact:'), ('resume', 'Resume when:'))
+    )
+    return [label for key, label in labels if not fields.get(key)]
 
 def resolve_paths(root, args, config):
     """合并命令行参数、项目配置和默认值，得到本次检查使用的目录。
@@ -127,11 +160,11 @@ def check_links(root, paths):
 
 
 def check_cards(root, cards_dir, card_id=DEFAULT_CARD_ID):
-    """检查模块卡子需求的必填字段、勾选与状态一致性及结构化「待确认」格式。
+    """检查模块卡子需求的必填字段、勾选与状态一致性及结构化「待确认 / Pending」格式。
 
     参数 [root]：项目根；[cards_dir]：任务卡目录；[card_id]：子需求编号正则。
     返回：错误描述列表。子需求小节从其 ### 标题到下一个子需求标题或二级标题为止。
-    不含「｜」的自由文本「待确认：」不报错；勾选 [x] 时若协作状态仍为非终态则报错。
+    不含「｜」或「|」的自由文本「待确认：」/「Pending:」不报错；勾选 [x] 时若协作状态仍为非终态则报错。
     """
     errors = []
     heading = re.compile(rf'^###\s+({card_id})\b.*$', re.M)
@@ -155,8 +188,8 @@ def check_cards(root, cards_dir, card_id=DEFAULT_CARD_ID):
                         errors.append(
                             f'{rel}: {cid} 完成勾选框已勾选，但协作状态仍为非终态「{status_value}」'
                         )
-            for line in re.findall(r'^- 待确认[：:].*｜.*$', section, re.M):
-                missing = [key for key in PENDING_KEYS if key not in line]
+            for line in section.splitlines():
+                missing = check_pending_line(line.strip())
                 if missing:
                     errors.append(f'{rel}: {cid} 待确认记录缺少 {"/".join(missing)}')
     return errors

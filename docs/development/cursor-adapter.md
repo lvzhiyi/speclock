@@ -1,4 +1,4 @@
-# Cursor 适配（0.30.0）
+# Cursor 适配（0.30.1）
 
 本仓库仅为 `workflow-core` 提供 Cursor 原生插件清单。根 `.cursor-plugin/marketplace.json` 只列该插件，其他维度插件、组合包和外部依赖不承诺可在 Cursor 安装。本版本提供远程仓库发布内容；安装与启用需通过 Cursor 支持的插件入口完成，不直接修改用户全局配置。
 

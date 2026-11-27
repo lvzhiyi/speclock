@@ -155,6 +155,41 @@ class DashboardDataTest(unittest.TestCase):
         self.assertEqual(data["tasks"][0]["state"], "pending")
         self.assertEqual(data["pending"][0]["resume"], "补齐字段")
 
+    def test_english_structured_pending_items_are_extracted(self):
+        self.config(extra="docs:\n  cards_dir: cards\n")
+        self.write(
+            "cards/auth.md",
+            "### AUTH-R04 Token Rotation\n"
+            "- [ ] Subtask completed\n"
+            "- Status: Blocked; Pending Clarification\n"
+            "- Source: Spec v2\n"
+            "- Acceptance: Cover rotation.\n"
+            "- Pending (Q01): Rotate policy? | Impact: TokenStore | Resume when: Confirmed\n"
+            "- Pending: TTL rule? | Impact: rotate_token | Resume: Decide TTL | Owner: PM\n"
+            "- Pending: free text without pipe is allowed\n",
+        )
+        data = self.build()
+        self.assertEqual(data["issues"], [])
+        self.assertEqual(data["tasks"][0]["state"], "blocked")
+        self.assertEqual(len(data["pending"]), 2)
+        self.assertEqual(len(data["tasks"][0]["pending"]), 2)
+        self.assertEqual(data["pending"][0]["question"], "Q01: Rotate policy?")
+        self.assertEqual(data["pending"][0]["impact"], "TokenStore")
+        self.assertEqual(data["pending"][0]["resume"], "Confirmed")
+        self.assertEqual(data["pending"][1]["owner"], "PM")
+
+        self.write(
+            "cards/auth.md",
+            "### AUTH-R04 Token Rotation\n"
+            "- [ ] Subtask completed\n"
+            "- Status: Blocked; Pending Clarification\n"
+            "- Source: Spec v2\n"
+            "- Acceptance: Cover rotation.\n"
+            "- Pending (Q02): Missing resume | Impact: API\n",
+        )
+        incomplete = self.build()
+        self.assertTrue(any("待确认记录字段不完整" in issue for issue in incomplete["issues"]))
+
     def test_unchecked_box_without_state_is_pending(self):
         self.config(extra="docs:\n  cards_dir: cards\n")
         self.write("cards/a.md", "### A-R1 登录\n- [ ] 子需求完成（仅自测完成后勾选）\n")

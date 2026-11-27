@@ -79,7 +79,7 @@ WORKFLOW_HOST=HOST python3 "${CLAUDE_PLUGIN_ROOT}/scripts/workflow_planning_cli.
 收到用户对结论摘要的确认后，按当前任务情况落盘：
 
 - **路径 A（无实施任务或建任务前）**：执行 `workflow_planning_cli.py open --operation clarify` 登记本次需改动的精确文件清单，仅用原生编辑工具回写：
-  - **模块卡**：补全/更新 `范围与非目标`、`验收`、`依赖与待确认`（已解决项记录结论或移除未决阻塞；未决外部阻塞保持 `- 待确认：<具体缺项或冲突>｜影响：<阻塞的子需求/步骤>｜恢复条件：<取得什么后继续>` 格式）；全部阻塞解决时，跟随任务卡语言将状态更新为 `待处理`（英文卡片写 `Pending`，**严禁勾选完成框 `[x]`**）。
+  - **模块卡**：补全/更新 `范围与非目标`、`验收`、`依赖与待确认`（已解决项记录结论或移除未决阻塞；未决外部阻塞保持 `- 待确认：<具体缺项或冲突>｜影响：<阻塞的子需求/步骤>｜恢复条件：<取得什么后继续>` 或英文 `- Pending (Q01): <open question or conflict> | Impact: <blocked scope/step> | Resume when: <condition to proceed>` 格式）；全部阻塞解决时，跟随任务卡语言将状态更新为 `待处理`（英文卡片写 `Pending`，**严禁勾选完成框 `[x]`**）。
   - **需求说明**（如涉及业务规则或 `Qxx`）：把结论写回对应业务章节，并在 `## 待确认问题` 保留原编号、问题、结论、确认人/来源、时间与依据，不只删除待确认项。
   - **术语表 / 设计索引**：仅当本次澄清确认了新术语或设计主稿/映射时同步更新。
   - 运行只读文档检查并确认 0 错误（项目配置另有 `verify.docs` 时一并运行），随后立即执行 `workflow_planning_cli.py close`：
@@ -97,6 +97,6 @@ WORKFLOW_HOST=HOST python3 "${CLAUDE_PLUGIN_ROOT}/scripts/workflow_planning_cli.
 
 - [ ] 提问前已自查仓库文档、源码、设计与契约，未向用户反问已有事实
 - [ ] 所有可决分支已收敛为明确结论与可验证验收场景，未擅自拍板业务规则，未在澄清问题中使用 `workflow-confirm:`
-- [ ] 无法由当前用户拍板的外部阻塞已原位保留 `- 待确认：…｜影响：…｜恢复条件：…`
+- [ ] 无法由当前用户拍板的外部阻塞已原位保留 `- 待确认：…｜影响：…｜恢复条件：…` 或 `- Pending (Q01): ... | Impact: ... | Resume when: ...`
 - [ ] 模块卡、需求说明（及涉及的术语表/设计索引）已按文档职责回写，未误勾完成框 `[x]`
 - [ ] 已运行 `check_docs.py --root .`（及项目 `verify.docs`）确认 0 错误，并已执行 `workflow_planning_cli.py close`

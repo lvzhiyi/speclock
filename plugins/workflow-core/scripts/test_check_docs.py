@@ -61,6 +61,21 @@ class CardTests(ProjectTestCase):
         self.assertIn('恢复条件：', errors[0])
         self.assertEqual(self.cards(COMPLETE + '- 待确认：缺设计｜影响：R01｜恢复条件：补齐主稿\n'), [])
 
+    def test_english_structured_pending_item_validation(self):
+        valid = (
+            COMPLETE
+            + '- Pending (Q01): Rotate policy? | Impact: TokenStore | Resume when: Confirmed\n'
+            + '- Pending: TTL rule? | Impact: rotate_token | Resume: Decide TTL\n'
+            + '- Pending: decide later without pipe.\n'
+        )
+        self.assertEqual(self.cards(valid), [])
+        missing_resume = self.cards(COMPLETE + '- Pending (Q02): Missing resume | Impact: API\n')
+        self.assertEqual(len(missing_resume), 1)
+        self.assertIn('Resume when:', missing_resume[0])
+        missing_impact = self.cards(COMPLETE + '- Pending (Q03): Missing impact | Resume when: Confirmed\n')
+        self.assertEqual(len(missing_impact), 1)
+        self.assertIn('Impact:', missing_impact[0])
+
     def test_checked_box_conflicts_with_non_terminal_status(self):
         for status in ('待确认', '待验证', '实施中', '评审通过，待人工验收', '已取消'):
             card = COMPLETE.replace('- [ ] ', '- [x] ').replace('待处理', status)

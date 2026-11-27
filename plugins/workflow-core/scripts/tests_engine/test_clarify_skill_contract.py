@@ -31,6 +31,12 @@ class ClarifySkillContractTests(unittest.TestCase):
             with self.subTest(skill=name):
                 self.assertIn("clarify", text)
 
+    def test_clarify_and_breakdown_document_english_pending_format(self):
+        for name in ("clarify", "prd-breakdown"):
+            text = (SKILLS / name / "SKILL.md").read_text(encoding="utf-8")
+            with self.subTest(skill=name):
+                self.assertIn("Pending (Q01):", text)
+
 
 if __name__ == "__main__":
     unittest.main()

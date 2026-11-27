@@ -46,6 +46,19 @@ KNOWN_STATES = {"unknown", "created", "ready", "running", "passed", "completed",
                 "stale", "cancelled", "pending", "in_progress", "blocked", "review_passed"}
 CARD = re.compile(r"^#{3,4}\s+([A-Za-z0-9_]*[A-Za-z][A-Za-z0-9_-]*-[A-Za-z]*[0-9]+[A-Za-z0-9_]*|[A-Za-z0-9][A-Za-z0-9_-]*-R[0-9]+)(?:\s+|[:：]\s*)(.+?)\s*$")
 FIELD = re.compile(r"^\s*-\s+(?:\*\*)?(状态|协作状态|Status)(?:\*\*)?[:：]\s*(.+?)\s*$", re.I)
+PENDING_HEAD = re.compile(r"^(?:待确认|Pending(?:\s+Clarification)?)(?:\s*[（(]([^）)]+)[）)])?\s*[:：]\s*(.*)$", re.I)
+PENDING_FIELD_KEYS = {
+    "影响": "impact",
+    "impact": "impact",
+    "恢复条件": "resume",
+    "resume": "resume",
+    "resume when": "resume",
+    "resume condition": "resume",
+    "负责人": "owner",
+    "owner": "owner",
+    "来源": "source",
+    "source": "source",
+}
 
 
 def _relative(value):
@@ -138,6 +151,26 @@ def _evidence(item, state, source, issues):
     item["source"] = previous + "；" + source if previous else source
 
 
+def _parse_pending(line):
+    """解析中英文结构化待确认记录；非结构化条目返回 (False, None)。"""
+    if not line.startswith("- ") or ("｜" not in line and "|" not in line):
+        return False, None
+    parts = re.split(r"[｜|]", line[2:])
+    head = PENDING_HEAD.match(parts[0].strip())
+    if not head:
+        return False, None
+    qid = (head.group(1) or "").strip()
+    body = head.group(2).strip()
+    fields = {"question": f"{qid}: {body}" if qid and body else body}
+    for part in parts[1:]:
+        pair = re.split("[:：]", part.strip(), maxsplit=1)
+        if len(pair) == 2:
+            key = PENDING_FIELD_KEYS.get(pair[0].strip().lower())
+            if key and pair[1].strip():
+                fields[key] = pair[1].strip()
+    return True, fields
+
+
 def _parse(text, path, result, stage_map, task_map):
     current = None
     headings = {}
@@ -190,20 +223,16 @@ def _parse(text, path, result, stage_map, task_map):
         stage = re.match(r"^- 阶段[:：]\s*([a-z]+)\s*｜\s*状态[:：]\s*(.+)$", line)
         if stage and stage.group(1) in stage_map:
             _evidence(stage_map[stage.group(1)], _state(stage.group(2)), source, result["issues"])
-        if line.startswith(("- 待确认：", "- 待确认:")) and "｜" in line:
-            fields = {}
-            for part in line[2:].split("｜"):
-                pair = re.split("[:：]", part.strip(), maxsplit=1)
-                if len(pair) == 2:
-                    fields[pair[0].strip()] = pair[1].strip()
-            required = ("待确认", "影响", "恢复条件")
+        is_pending, fields = _parse_pending(line)
+        if is_pending:
+            required = ("question", "impact", "resume")
             if all(fields.get(key) for key in required):
                 entry = {
-                    "question": fields["待确认"],
-                    "impact": fields["影响"],
-                    "owner": fields.get("负责人") or "未指定",
-                    "resume": fields["恢复条件"],
-                    "source": source + ("｜" + fields["来源"] if fields.get("来源") else ""),
+                    "question": fields["question"],
+                    "impact": fields["impact"],
+                    "owner": fields.get("owner") or "未指定",
+                    "resume": fields["resume"],
+                    "source": source + ("｜" + fields["source"] if fields.get("source") else ""),
                 }
                 result["pending"].append(entry)
                 if current is not None:
