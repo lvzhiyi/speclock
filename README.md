@@ -10,7 +10,7 @@ SpecLock is an AI development workflow plugin for **Codex, Claude Code, and Curs
 
 ![SpecLock Architecture](docs/images/architecture.en.png)
 
-![SpecLock Gate Interception and Dashboard Demo](docs/images/speclock-demo.gif)
+![SpecLock Gate Interception and Dashboard Demo](docs/images/speclock-demo.en.gif)
 
 *9-second preview: failed E2E check blocks progress → code edit invalidates SHA-256 evidence → real Dashboard waits for human acceptance ([Watch full walkthrough](https://youtu.be/ZKFB6Ni0aZ4))*
 
